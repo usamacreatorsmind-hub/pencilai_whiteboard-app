@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import '../state/whiteboard_provider.dart';
 import '../widgets/whiteboard_canvas.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/object_handles.dart';
