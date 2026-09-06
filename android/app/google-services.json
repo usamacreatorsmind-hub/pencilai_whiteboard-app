@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "851240445518",
+    "project_id": "pencilaiboardapp",
+    "storage_bucket": "pencilaiboardapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:851240445518:android:3d1d296fae354908c9051f",
+        "android_client_info": {
+          "package_name": "com.pencilai.whitebaordapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQy0XVgTW_-_P8SMtsQOFEbFTLlIZBkhk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
