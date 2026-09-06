@@ -8,8 +8,6 @@ import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Set immersive mode to hide navigation and status bars
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   try {
