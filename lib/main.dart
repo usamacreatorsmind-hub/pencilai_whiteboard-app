@@ -15,7 +15,6 @@ void main() async {
   } catch (e) {
     debugPrint("Firebase init failed: $e");
   }
-
   runApp(
     MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => WhiteboardProvider())],
