@@ -16,17 +16,72 @@ class StrokeElement extends BoardElement {
     super.scale,
   });
 
+  Path? _cachedPath;
+  Offset? predictedTip;
+
+  Path get path {
+    if (_cachedPath != null) return _cachedPath!;
+
+    _cachedPath = Path();
+    if (points.length >= 2) {
+      _cachedPath!.moveTo(points[0].dx, points[0].dy);
+      final mid0 = Offset((points[0].dx + points[1].dx) / 2, (points[0].dy + points[1].dy) / 2);
+      _cachedPath!.lineTo(mid0.dx, mid0.dy);
+
+      for (var i = 1; i < points.length - 1; i++) {
+        final p1 = points[i];
+        final p2 = points[i + 1];
+        final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+        _cachedPath!.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+      }
+    } else if (points.isNotEmpty) {
+      _cachedPath!.moveTo(points[0].dx, points[0].dy);
+    }
+    return _cachedPath!;
+  }
+
+  void addPoint(Offset p) {
+    points.add(p);
+    if (_cachedPath == null) {
+      _cachedPath = Path()..moveTo(p.dx, p.dy);
+    } else if (points.length > 2) {
+      // Confirmed mid-point logic: we draw the curve up to the midpoint of the new point and previous point
+      final p1 = points[points.length - 2];
+      final p2 = points[points.length - 1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      _cachedPath!.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
+    } else {
+      // For the second point, just lineTo the midpoint
+      final p1 = points[0];
+      final p2 = points[1];
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      _cachedPath!.lineTo(mid.dx, mid.dy);
+    }
+    invalidateBounds();
+  }
+
+  @override
+  void invalidateBounds() {
+    super.invalidateBounds();
+  }
+
+  @override
+  void invalidatePath() {
+    _cachedPath = null;
+    predictedTip = null;
+  }
+
   @override
   Map<String, dynamic> toJson() => {
-        'type': 'stroke',
-        'id': id,
-        'position': {'dx': position.dx, 'dy': position.dy},
-        'rotation': rotation,
-        'scale': scale,
-        'points': points.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
-        'color': color.value,
-        'strokeWidth': strokeWidth,
-      };
+    'type': 'stroke',
+    'id': id,
+    'position': {'dx': position.dx, 'dy': position.dy},
+    'rotation': rotation,
+    'scale': scale,
+    'points': points.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
+    'color': color.value,
+    'strokeWidth': strokeWidth,
+  };
 
   factory StrokeElement.fromJson(Map<String, dynamic> json) {
     return StrokeElement(
@@ -34,9 +89,7 @@ class StrokeElement extends BoardElement {
       position: Offset(json['position']['dx'], json['position']['dy']),
       rotation: json['rotation']?.toDouble() ?? 0.0,
       scale: json['scale']?.toDouble() ?? 1.0,
-      points: (json['points'] as List)
-          .map((p) => Offset(p['dx'], p['dy']))
-          .toList(),
+      points: (json['points'] as List).map((p) => Offset(p['dx'], p['dy'])).toList(),
       color: Color(json['color']),
       strokeWidth: json['strokeWidth'].toDouble(),
     );

@@ -17,6 +17,8 @@ abstract class BoardElement {
     this.scale = 1.0,
   });
 
+  Rect? _cachedBounds;
+
   Map<String, dynamic> toJson();
 
   factory BoardElement.fromJson(Map<String, dynamic> json) {
@@ -41,27 +43,45 @@ abstract class BoardElement {
   });
 
   Rect getRawBounds() {
+    if (_cachedBounds != null) return _cachedBounds!;
+    
+    Rect bounds;
     if (this is StrokeElement) {
       final points = (this as StrokeElement).points;
-      if (points.isEmpty) return Rect.fromLTWH(position.dx, position.dy, 0, 0);
-      double minX = points[0].dx;
-      double maxX = points[0].dx;
-      double minY = points[0].dy;
-      double maxY = points[0].dy;
-      for (var p in points) {
-        minX = min(minX, p.dx);
-        maxX = max(maxX, p.dx);
-        minY = min(minY, p.dy);
-        maxY = max(maxY, p.dy);
+      if (points.isEmpty) {
+        bounds = Rect.fromLTWH(position.dx, position.dy, 0, 0);
+      } else {
+        double minX = points[0].dx;
+        double maxX = points[0].dx;
+        double minY = points[0].dy;
+        double maxY = points[0].dy;
+        for (var p in points) {
+          minX = min(minX, p.dx);
+          maxX = max(maxX, p.dx);
+          minY = min(minY, p.dy);
+          maxY = max(maxY, p.dy);
+        }
+        bounds = Rect.fromLTRB(minX, minY, maxX, maxY);
       }
-      return Rect.fromLTRB(minX, minY, maxX, maxY);
     } else if (this is ShapeElement) {
       final shape = this as ShapeElement;
-      return Rect.fromPoints(shape.position, shape.endPoint);
+      bounds = Rect.fromPoints(shape.position, shape.endPoint);
     } else if (this is ImageElement) {
       final img = this as ImageElement;
-      return Rect.fromLTWH(img.position.dx, img.position.dy, img.size.width, img.size.height);
+      bounds = Rect.fromLTWH(img.position.dx, img.position.dy, img.size.width, img.size.height);
+    } else {
+      bounds = Rect.fromLTWH(position.dx, position.dy, 100, 100);
     }
-    return Rect.fromLTWH(position.dx, position.dy, 100, 100);
+    
+    _cachedBounds = bounds;
+    return bounds;
+  }
+
+  void invalidateBounds() {
+    _cachedBounds = null;
+  }
+
+  void invalidatePath() {
+    // Subclasses like StrokeElement will override this
   }
 }

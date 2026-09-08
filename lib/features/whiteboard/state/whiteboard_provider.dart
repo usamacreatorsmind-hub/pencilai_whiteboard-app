@@ -61,6 +61,8 @@ class MultiTransformCommand extends Command {
       element.rotation = data.newRot;
       element.scale = data.newScale;
       _updateInternalPoints(element, data.newPos - data.oldPos);
+      element.invalidateBounds();
+      element.invalidatePath(); // Sync selection box and path
     }
   }
 
@@ -72,6 +74,8 @@ class MultiTransformCommand extends Command {
       element.rotation = data.oldRot;
       element.scale = data.oldScale;
       _updateInternalPoints(element, data.oldPos - data.newPos);
+      element.invalidateBounds();
+      element.invalidatePath(); // Sync selection box and path
     }
   }
 
@@ -118,6 +122,7 @@ class ClearPageCommand extends Command {
 class WhiteboardProvider extends ChangeNotifier {
   final List<BoardPage> _pages = [BoardPage(id: const Uuid().v4(), elements: [])];
   int _currentPageIndex = 0;
+  int _boardVersion = 0;
 
   WhiteboardTool _currentTool = WhiteboardTool.pen;
   Color _currentColor = Colors.black;
@@ -134,6 +139,7 @@ class WhiteboardProvider extends ChangeNotifier {
   List<BoardPage> get pages => _pages;
   int get currentPageIndex => _currentPageIndex;
   BoardPage get currentPage => _pages[_currentPageIndex];
+  int get boardVersion => _boardVersion;
   WhiteboardTool get currentTool => _currentTool;
   Color get currentColor => _currentColor;
   double get strokeWidth => _strokeWidth;
@@ -143,26 +149,31 @@ class WhiteboardProvider extends ChangeNotifier {
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
 
+  void _notify() {
+    _boardVersion++;
+    notifyListeners();
+  }
+
   // Setters
   void setTool(WhiteboardTool tool) {
     _currentTool = tool;
     if (tool != WhiteboardTool.select) clearSelection();
-    notifyListeners();
+    _notify();
   }
 
   void setColor(Color color) {
     _currentColor = color;
-    notifyListeners();
+    _notify();
   }
 
   void setStrokeWidth(double width) {
     _strokeWidth = width;
-    notifyListeners();
+    _notify();
   }
 
   void setShapeType(ShapeType type) {
     _currentShapeType = type;
-    notifyListeners();
+    _notify();
   }
 
   // Selection Methods
@@ -173,13 +184,13 @@ class WhiteboardProvider extends ChangeNotifier {
     }
     if (!multi) _selectedElementIds.clear();
     _selectedElementIds.add(id);
-    notifyListeners();
+    _notify();
   }
 
   void clearSelection() {
     _selectedElementIds.clear();
     _lassoPath = null;
-    notifyListeners();
+    _notify();
   }
 
   void updateLassoPath(Path? path) {
@@ -203,7 +214,7 @@ class WhiteboardProvider extends ChangeNotifier {
         }
       }
     }
-    notifyListeners();
+    _notify();
   }
 
   // Commands
@@ -260,7 +271,7 @@ class WhiteboardProvider extends ChangeNotifier {
       if (groupCenter != null && scaleDelta != 0) {
         final Offset currentCenter = element.getRawBounds().center;
         final Offset relativePos = currentCenter - groupCenter;
-        
+
         // Move the element center proportionally
         final Offset newRelativePos = relativePos * scaleFactor;
         final Offset posDelta = newRelativePos - relativePos;
@@ -273,7 +284,7 @@ class WhiteboardProvider extends ChangeNotifier {
       if (groupCenter != null && rotationDelta != 0) {
         final Offset currentCenter = element.getRawBounds().center;
         final Offset relativePos = currentCenter - groupCenter;
-        
+
         final double cosTheta = cos(rotationDelta);
         final double sinTheta = sin(rotationDelta);
 
@@ -285,7 +296,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
         element.position += posDelta;
         _updateInternalPoints(element, posDelta);
-        
+
         // Also update individual rotation
         element.rotation += rotationDelta;
       } else if (groupCenter == null) {
@@ -300,8 +311,11 @@ class WhiteboardProvider extends ChangeNotifier {
       // 4. Individual scale property
       // Multiplicative scaling prevents distortion in groups
       element.scale = (element.scale * scaleFactor).clamp(0.1, 10.0);
+      
+      element.invalidateBounds(); 
+      element.invalidatePath(); // Sync the selection box and path during drag
     }
-    notifyListeners();
+    _notify();
   }
 
   void _updateInternalPoints(BoardElement element, Offset delta) {
@@ -340,7 +354,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void endTransform() {
     if (_startTransforms.isEmpty) return;
-    
+
     final List<TransformData> transforms = [];
     for (var id in _selectedElementIds) {
       final e = currentPage.elements.firstWhere((el) => el.id == id);
@@ -366,7 +380,22 @@ class WhiteboardProvider extends ChangeNotifier {
     List<BoardElement> toAdd = [];
     bool changed = false;
 
+    // Create eraser bounding box once
+    final Rect eraserRect = Rect.fromCircle(center: position, radius: radius);
+
     for (var element in List.from(currentPage.elements)) {
+      // Fast Spatial Filter: Bounding box check
+      final rawBounds = element.getRawBounds();
+      // Account for scale in visual bounds check
+      final visualBounds = Rect.fromCenter(
+        center: rawBounds.center,
+        width: rawBounds.width * element.scale,
+        height: rawBounds.height * element.scale,
+      );
+
+      // If eraser area doesn't even touch the element's box, skip it
+      if (!eraserRect.overlaps(visualBounds.inflate(radius))) continue;
+
       if (element is StrokeElement) {
         List<List<Offset>> segments = _splitStrokePoints(element.points, position, radius);
 
@@ -415,26 +444,36 @@ class WhiteboardProvider extends ChangeNotifier {
         currentPage.elements.removeWhere((x) => x.id == e.id);
       }
       currentPage.elements.addAll(toAdd);
-      notifyListeners();
+      _notify();
     }
   }
 
   List<List<Offset>> _splitStrokePoints(List<Offset> points, Offset eraserCenter, double radius) {
+    if (points.isEmpty) return [];
+    
     List<List<Offset>> result = [];
-    List<Offset> currentSegment = [];
+    List<Offset>? currentSegment;
+
+    final double radiusSq = radius * radius;
 
     for (int i = 0; i < points.length; i++) {
-      bool inside = (points[i] - eraserCenter).distance < radius;
+      final p = points[i];
+      // Use distanceSquared to avoid sqrt
+      bool inside = (p.dx - eraserCenter.dx) * (p.dx - eraserCenter.dx) + 
+                   (p.dy - eraserCenter.dy) * (p.dy - eraserCenter.dy) < radiusSq;
+      
       if (inside) {
-        if (currentSegment.isNotEmpty) {
-          result.add(List.from(currentSegment));
-          currentSegment = [];
+        if (currentSegment != null && currentSegment.isNotEmpty) {
+          result.add(currentSegment);
+          currentSegment = null;
         }
       } else {
-        currentSegment.add(points[i]);
+        currentSegment ??= [];
+        currentSegment.add(p);
       }
     }
-    if (currentSegment.isNotEmpty) {
+    
+    if (currentSegment != null && currentSegment.isNotEmpty) {
       result.add(currentSegment);
     }
     return result;
@@ -454,7 +493,7 @@ class WhiteboardProvider extends ChangeNotifier {
     command.execute(this);
     _undoStack.add(command);
     _redoStack.clear();
-    notifyListeners();
+    _notify();
   }
 
   void undo() {
@@ -462,7 +501,7 @@ class WhiteboardProvider extends ChangeNotifier {
     final command = _undoStack.removeLast();
     command.undo(this);
     _redoStack.add(command);
-    notifyListeners();
+    _notify();
   }
 
   void redo() {
@@ -470,7 +509,7 @@ class WhiteboardProvider extends ChangeNotifier {
     final command = _redoStack.removeLast();
     command.execute(this);
     _undoStack.add(command);
-    notifyListeners();
+    _notify();
   }
 
   // Page Management
@@ -479,7 +518,7 @@ class WhiteboardProvider extends ChangeNotifier {
     _currentPageIndex = _pages.length - 1;
     _undoStack.clear();
     _redoStack.clear();
-    notifyListeners();
+    _notify();
   }
 
   void deletePage(int index) {
@@ -488,13 +527,13 @@ class WhiteboardProvider extends ChangeNotifier {
     if (_currentPageIndex >= _pages.length) {
       _currentPageIndex = _pages.length - 1;
     }
-    notifyListeners();
+    _notify();
   }
 
   void switchPage(int index) {
     _currentPageIndex = index;
     clearSelection();
-    notifyListeners();
+    _notify();
   }
 
   // Hit Testing
