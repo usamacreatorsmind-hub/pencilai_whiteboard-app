@@ -43,15 +43,19 @@ class StrokeElement extends BoardElement {
   void addPoint(Offset p) {
     points.add(p);
     if (_cachedPath == null) {
-      _cachedPath = Path()..moveTo(p.dx, p.dy);
+      // Path pehle point se shuru honi chahiye, naye point se nahi
+      _cachedPath = Path()..moveTo(points[0].dx, points[0].dy);
+      if (points.length == 2) {
+        // Agar ye doosra point hai, turant is tak line bhi khींch do
+        final mid = Offset((points[0].dx + points[1].dx) / 2, (points[0].dy + points[1].dy) / 2);
+        _cachedPath!.lineTo(mid.dx, mid.dy);
+      }
     } else if (points.length > 2) {
-      // Confirmed mid-point logic: we draw the curve up to the midpoint of the new point and previous point
       final p1 = points[points.length - 2];
       final p2 = points[points.length - 1];
       final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
       _cachedPath!.quadraticBezierTo(p1.dx, p1.dy, mid.dx, mid.dy);
     } else {
-      // For the second point, just lineTo the midpoint
       final p1 = points[0];
       final p2 = points[1];
       final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);

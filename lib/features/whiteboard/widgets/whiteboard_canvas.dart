@@ -1,4 +1,3 @@
-
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -22,6 +21,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final Map<int, BoardElement> _activeElements = {};
   final Map<int, Offset> _eraserPositions = {};
   final Map<int, PointerEvent> _pointers = {};
+  final Map<int, Offset> _smoothedDeltas = {}; // To smooth out prediction jitter
+  Offset? _debugTouchDownPosition;
   Path? _currentLasso;
   bool _isUsingGestureEraser = false;
 
@@ -42,40 +43,19 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       return false;
     }
 
-    // TEMP DEBUG — hata dena tuning ke baad
-    debugPrint(
-      '[PALM-DEBUG] kind=${event.kind} '
-      'size=${event.size.toStringAsFixed(3)} '
-      'radiusMajor=${event.radiusMajor.toStringAsFixed(1)} '
-      'radiusMinor=${event.radiusMinor.toStringAsFixed(1)} '
-      'pressure=${event.pressure.toStringAsFixed(3)}',
-    );
+    final double major = event.radiusMajor;
+    final double minor = event.radiusMinor;
 
-    final bool sizeIndicatesPalm = event.size > 0.12;
-    final bool radiusIndicatesPalm = event.radiusMajor > 22 || event.radiusMinor > 20;
-    final bool pressureIndicatesPalm = event.pressure > 0.85;
+    // Lowered further for near-instant response on initial contact
+    final bool veryLargeContact = major > 15 || event.size > 0.013;
 
-    return sizeIndicatesPalm || radiusIndicatesPalm || pressureIndicatesPalm;
-  }
+    final double ratio = minor > 0 ? major / minor : 1.0;
+    final bool isWideAndRound = major > 12 && ratio < 1.25;
 
-  bool _isDenseCluster() {
-    if (_pointers.length < 2) return false;
-
-    // No-Gap Rule: If any two pointers are closer than 50 pixels,
-    // it's likely parts of the same hand touching (back hand/palm).
-    final list = _pointers.values.toList();
-    for (int i = 0; i < list.length; i++) {
-      for (int j = i + 1; j < list.length; j++) {
-        if ((list[i].localPosition - list[j].localPosition).distance < 50) {
-          return true;
-        }
-      }
-    }
-    return false;
+    return veryLargeContact || isWideAndRound;
   }
 
   bool _isEraserMode(PointerEvent event) {
-    // Stylus protection: Never auto-erase if a stylus is being used
     if (_pointers.values.any((e) => e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus)) {
       return false;
     }
@@ -83,7 +63,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     // 1. Quantity: 4 or more fingers always erases
     if (_pointers.length >= 4) return true;
 
-    // 2. Heavy Contact: Palm or back-hand (large contact area)
+    // 2. Heavy Contact: Palm or back-hand
     if (_pointers.values.any((e) => _isPalm(e))) return true;
 
     return false;
@@ -124,6 +104,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         color: provider.currentColor,
         strokeWidth: provider.strokeWidth,
       );
+      _debugTouchDownPosition = localPos;
     } else if (provider.currentTool == WhiteboardTool.shape) {
       _activeElements[pointerId] = ShapeElement(
         id: id,
@@ -148,22 +129,20 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     // 1. Dynamic Check: If 4th finger added or palm detected mid-drawing
     if (_isEraserMode(event)) {
       if (!_isUsingGestureEraser) {
-        // First frame of gesture-erase: switch mode, this already erases once
         _isUsingGestureEraser = true;
         _switchToEraserMode(provider);
         return;
       }
 
-      // Already in gesture-eraser mode: keep tracking + throttled erasing
       _eraserPositions[pointerId] = localPos;
 
       final now = DateTime.now();
       if (now.difference(_lastGestureEraseTime).inMilliseconds > 32) {
-        provider.partialErase(localPos, 50.0); // Changed from 60.0 → 50.0
+        provider.partialErase(localPos, 50.0);
         _lastGestureEraseTime = now;
       }
 
-      _activeLayerPulse.value++; // keeps the blue indicator following at 60fps
+      _activeLayerPulse.value++;
       return;
     }
 
@@ -190,18 +169,24 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (active is StrokeElement) {
       active.addPoint(localPos);
 
-      // Input Prediction: Predict where the pen will be in ~16ms (1 frame)
-      // based on current velocity (delta)
       final delta = event.delta;
-      if (delta.distance > 2) {
-        // Simple linear prediction: tip = current + delta * factor
-        // A factor of 1.0 to 1.5 usually compensates for typical touch lag
-        active.predictedTip = localPos + (delta * 1.5);
+
+      // Smoothing logic: combine current delta with previous smoothed delta
+      // to filter out high-frequency noise from touch sensor
+      final prevDelta = _smoothedDeltas[pointerId] ?? delta;
+      final smoothedDelta = Offset(prevDelta.dx * 0.7 + delta.dx * 0.3, prevDelta.dy * 0.7 + delta.dy * 0.3);
+      _smoothedDeltas[pointerId] = smoothedDelta;
+
+      if (smoothedDelta.distance > 0.3) {
+        // Balanced multiplier (3.8x) with heavy smoothing to prevent jitter
+        // but still bridge the 1-inch gap
+        active.predictedTip = localPos + smoothedDelta * 3.8;
       } else {
         active.predictedTip = null;
       }
+
+      _debugTouchDownPosition = localPos;
     } else if (active is ShapeElement) {
-      // For shapes, copyWith is still needed but minimize other logic
       _activeElements[pointerId] = active.copyWith(endPoint: localPos)..invalidateBounds();
     }
     _activeLayerPulse.value++;
@@ -217,6 +202,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     _pointers.remove(pointerId);
     _eraserPositions.remove(pointerId);
+    _smoothedDeltas.remove(pointerId);
 
     // If all fingers are lifted, reset gesture eraser state
     if (_pointers.isEmpty) {
@@ -282,7 +268,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
           onPointerUp: (e) => _onPointerUp(e, provider),
           child: Stack(
             children: [
-              // 1. Static Layer
               RepaintBoundary(
                 child: CustomPaint(
                   isComplex: true,
@@ -329,7 +314,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                   ),
                 ),
               ),
-              // 2. Active Layer
+              // 2. Active Layer (Drawing Layer)
               ValueListenableBuilder<int>(
                 valueListenable: _activeLayerPulse,
                 builder: (context, _, __) {
@@ -341,6 +326,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                       activeElements: _activeElements.values.toList(),
                       lassoPath: lassoPath ?? _currentLasso,
                       selectedIds: const {},
+                      debugPoint: _debugTouchDownPosition, // Pass debug point to painter for sync
                     ),
                     size: Size.infinite,
                   );
@@ -414,6 +400,7 @@ class WhiteboardPainter extends CustomPainter {
   final Path? lassoPath;
   final Set<String> selectedIds;
   final int version;
+  final Offset? debugPoint;
 
   // Reusable Paint objects to avoid allocations
   final Paint _strokePaint = Paint()
@@ -427,7 +414,14 @@ class WhiteboardPainter extends CustomPainter {
     ..isAntiAlias = true
     ..style = PaintingStyle.fill;
 
-  WhiteboardPainter({required this.elements, required this.activeElements, this.lassoPath, required this.selectedIds, this.version = 0});
+  WhiteboardPainter({
+    required this.elements,
+    required this.activeElements,
+    this.lassoPath,
+    required this.selectedIds,
+    this.version = 0,
+    this.debugPoint,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -435,8 +429,15 @@ class WhiteboardPainter extends CustomPainter {
       _drawElement(canvas, element);
     }
     for (var element in activeElements) {
-      _drawElement(canvas, element);
+      _drawElement(canvas, element, isActive: true);
     }
+
+    // Draw debug point directly in painter to ensure zero-frame sync with ink
+    /*
+    if (debugPoint != null) {
+      canvas.drawCircle(debugPoint!, 6, Paint()..color = Colors.red.withOpacity(0.5));
+    }
+    */
 
     if (lassoPath != null) {
       canvas.drawPath(lassoPath!, _fillPaint..color = Colors.blue.withValues(alpha: 0.05));
@@ -463,7 +464,7 @@ class WhiteboardPainter extends CustomPainter {
     }
   }
 
-  void _drawElement(Canvas canvas, BoardElement element) {
+  void _drawElement(Canvas canvas, BoardElement element, {bool isActive = false}) {
     if (element is ImageElement) return; // Images are handled in the widget tree
 
     final isSelected = selectedIds.contains(element.id);
@@ -485,7 +486,9 @@ class WhiteboardPainter extends CustomPainter {
         ..strokeWidth = isSelected ? element.strokeWidth + 1 : element.strokeWidth
         ..maskFilter = isSelected ? const MaskFilter.blur(BlurStyle.outer, 3) : null;
 
-      if (element.points.length > 1) {
+      if (element.points.length == 1) {
+        canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = _strokePaint.color);
+      } else if (element.points.length > 1) {
         // 1. Draw confirmed smooth path (midpoint to midpoint)
         canvas.drawPath(element.path, _strokePaint);
 
@@ -494,11 +497,10 @@ class WhiteboardPainter extends CustomPainter {
         final p2 = element.points[element.points.length - 1];
         final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
 
-        // The painter draws from mid to the last point
         canvas.drawLine(mid, p2, _strokePaint);
 
         // 3. Draw prediction segment for active drawing (Ultra-low latency)
-        if (element.predictedTip != null) {
+        if (isActive && element.predictedTip != null) {
           canvas.drawLine(p2, element.predictedTip!, _strokePaint);
         }
       }
@@ -529,11 +531,93 @@ class WhiteboardPainter extends CustomPainter {
           _drawStar(canvas, element.position, element.endPoint, _strokePaint);
           break;
       }
+
+      // Realtime measurement label — only while actively drawing the shape
+      if (isActive) {
+        final dx = element.endPoint.dx - element.position.dx;
+        final dy = element.endPoint.dy - element.position.dy;
+
+        switch (element.shapeType) {
+          case ShapeType.circle:
+            final radius = Offset(dx, dy).distance / 2;
+            _drawMeasurementLabel(canvas, element.endPoint, 'r: ${radius.toStringAsFixed(0)}px');
+            break;
+          case ShapeType.line:
+          case ShapeType.arrow:
+            final angleDeg = atan2(dy, dx) * 180 / pi;
+            _drawMeasurementLabel(canvas, element.endPoint, '${angleDeg.toStringAsFixed(0)}°');
+            break;
+          case ShapeType.rectangle:
+            _drawMeasurementLabel(canvas, element.endPoint, '${dx.abs().toStringAsFixed(0)} × ${dy.abs().toStringAsFixed(0)}px');
+            break;
+          case ShapeType.triangle:
+            final angles = _calculateTriangleAngles(element.position, element.endPoint);
+            _drawMeasurementLabel(
+              canvas,
+              element.endPoint,
+              'A:${angles[0].toStringAsFixed(0)}° B:${angles[1].toStringAsFixed(0)}° C:${angles[2].toStringAsFixed(0)}°',
+            );
+            break;
+          case ShapeType.star:
+            break;
+        }
+      }
     }
 
     if (hasTransform) {
       canvas.restore();
     }
+  }
+
+  void _drawMeasurementLabel(Canvas canvas, Offset anchor, String text) {
+    final textSpan = TextSpan(
+      text: text,
+      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+    );
+    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
+    textPainter.layout();
+
+    const double paddingH = 8.0;
+    const double paddingV = 4.0;
+    final double boxWidth = textPainter.width + paddingH * 2;
+    final double boxHeight = textPainter.height + paddingV * 2;
+
+    final Offset boxTopLeft = Offset(anchor.dx + 12, anchor.dy - boxHeight - 12);
+    final Rect labelRect = Rect.fromLTWH(boxTopLeft.dx, boxTopLeft.dy, boxWidth, boxHeight);
+    final RRect roundedRect = RRect.fromRectAndRadius(labelRect, const Radius.circular(6));
+
+    canvas.drawRRect(
+      roundedRect,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.75)
+        ..style = PaintingStyle.fill,
+    );
+
+    textPainter.paint(canvas, Offset(boxTopLeft.dx + paddingH, boxTopLeft.dy + paddingV));
+  }
+
+  List<double> _calculateTriangleAngles(Offset start, Offset end) {
+    final rect = Rect.fromPoints(start, end);
+    final apex = Offset(rect.centerLeft.dx + rect.width / 2, rect.top);
+    final bottomRight = Offset(rect.right, rect.bottom);
+    final bottomLeft = Offset(rect.left, rect.bottom);
+
+    double angleBetween(Offset p1, Offset vertex, Offset p2) {
+      final v1 = p1 - vertex;
+      final v2 = p2 - vertex;
+      final dot = v1.dx * v2.dx + v1.dy * v2.dy;
+      final mag1 = v1.distance;
+      final mag2 = v2.distance;
+      if (mag1 == 0 || mag2 == 0) return 0.0;
+      final cosTheta = (dot / (mag1 * mag2)).clamp(-1.0, 1.0);
+      return acos(cosTheta) * 180 / pi;
+    }
+
+    final apexAngle = angleBetween(bottomLeft, apex, bottomRight);
+    final leftAngle = angleBetween(apex, bottomLeft, bottomRight);
+    final rightAngle = angleBetween(apex, bottomRight, bottomLeft);
+
+    return [apexAngle, leftAngle, rightAngle];
   }
 
   void _drawTriangle(Canvas canvas, Offset start, Offset end, Paint paint) {
