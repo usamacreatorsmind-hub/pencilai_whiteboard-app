@@ -8,6 +8,7 @@ class ShapeElement extends BoardElement {
   Offset endPoint;
   final Color color;
   final double strokeWidth;
+  final bool showDimensions;
 
   ShapeElement({
     required super.id,
@@ -16,6 +17,7 @@ class ShapeElement extends BoardElement {
     required this.endPoint,
     required this.color,
     required this.strokeWidth,
+    this.showDimensions = true,
     super.rotation,
     super.scale,
   });
@@ -31,6 +33,7 @@ class ShapeElement extends BoardElement {
         'endPoint': {'dx': endPoint.dx, 'dy': endPoint.dy},
         'color': color.value,
         'strokeWidth': strokeWidth,
+        'showDimensions': showDimensions,
       };
 
   factory ShapeElement.fromJson(Map<String, dynamic> json) {
@@ -43,6 +46,7 @@ class ShapeElement extends BoardElement {
       endPoint: Offset(json['endPoint']['dx'], json['endPoint']['dy']),
       color: Color(json['color']),
       strokeWidth: json['strokeWidth'].toDouble(),
+      showDimensions: json['showDimensions'] ?? true,
     );
   }
 
@@ -56,6 +60,7 @@ class ShapeElement extends BoardElement {
     Offset? endPoint,
     Color? color,
     double? strokeWidth,
+    bool? showDimensions,
   }) {
     return ShapeElement(
       id: id ?? this.id,
@@ -66,6 +71,7 @@ class ShapeElement extends BoardElement {
       endPoint: endPoint ?? this.endPoint,
       color: color ?? this.color,
       strokeWidth: strokeWidth ?? this.strokeWidth,
+      showDimensions: showDimensions ?? this.showDimensions,
     );
   }
 }

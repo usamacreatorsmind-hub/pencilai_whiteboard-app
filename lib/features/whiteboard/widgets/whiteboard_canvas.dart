@@ -21,15 +21,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final Map<int, BoardElement> _activeElements = {};
   final Map<int, Offset> _eraserPositions = {};
   final Map<int, PointerEvent> _pointers = {};
-  final Map<int, Offset> _smoothedDeltas = {}; // To smooth out prediction jitter
-  Offset? _debugTouchDownPosition;
   Path? _currentLasso;
   bool _isUsingGestureEraser = false;
 
-  // Throttling for gesture eraser to prevent lag
   DateTime _lastGestureEraseTime = DateTime.now();
-
-  // Pulse to trigger active layer repaint without full widget rebuild
   final ValueNotifier<int> _activeLayerPulse = ValueNotifier(0);
 
   @override
@@ -42,16 +37,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (event.kind == PointerDeviceKind.stylus || event.kind == PointerDeviceKind.invertedStylus) {
       return false;
     }
-
     final double major = event.radiusMajor;
     final double minor = event.radiusMinor;
-
-    // Lowered further for near-instant response on initial contact
     final bool veryLargeContact = major > 15 || event.size > 0.013;
-
     final double ratio = minor > 0 ? major / minor : 1.0;
     final bool isWideAndRound = major > 12 && ratio < 1.25;
-
     return veryLargeContact || isWideAndRound;
   }
 
@@ -59,13 +49,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (_pointers.values.any((e) => e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus)) {
       return false;
     }
-
-    // 1. Quantity: 4 or more fingers always erases
     if (_pointers.length >= 4) return true;
-
-    // 2. Heavy Contact: Palm or back-hand
     if (_pointers.values.any((e) => _isPalm(e))) return true;
-
     return false;
   }
 
@@ -74,7 +59,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final localPos = event.localPosition;
     final pointerId = event.pointer;
 
-    // 1. Check if we should be in Eraser mode
     if (_isEraserMode(event)) {
       _isUsingGestureEraser = true;
       _switchToEraserMode(provider);
@@ -104,7 +88,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         color: provider.currentColor,
         strokeWidth: provider.strokeWidth,
       );
-      _debugTouchDownPosition = localPos;
     } else if (provider.currentTool == WhiteboardTool.shape) {
       _activeElements[pointerId] = ShapeElement(
         id: id,
@@ -126,27 +109,22 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final pointerId = event.pointer;
     final localPos = event.localPosition;
 
-    // 1. Dynamic Check: If 4th finger added or palm detected mid-drawing
     if (_isEraserMode(event)) {
       if (!_isUsingGestureEraser) {
         _isUsingGestureEraser = true;
         _switchToEraserMode(provider);
         return;
       }
-
       _eraserPositions[pointerId] = localPos;
-
       final now = DateTime.now();
       if (now.difference(_lastGestureEraseTime).inMilliseconds > 32) {
         provider.partialErase(localPos, 50.0);
         _lastGestureEraseTime = now;
       }
-
       _activeLayerPulse.value++;
       return;
     }
 
-    // 2. Lasso Selection
     if (provider.currentTool == WhiteboardTool.select && _currentLasso != null) {
       _currentLasso!.lineTo(localPos.dx, localPos.dy);
       provider.updateLassoPath(_currentLasso);
@@ -154,7 +132,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       return;
     }
 
-    // 3. Normal Eraser tool (manual eraser mode, not gesture)
     if (provider.currentTool == WhiteboardTool.eraser || _eraserPositions.containsKey(pointerId)) {
       _eraserPositions[pointerId] = localPos;
       provider.partialErase(localPos, 25.0);
@@ -162,7 +139,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       return;
     }
 
-    // 4. Drawing (Pen / Shape)
     final active = _activeElements[pointerId];
     if (active == null) return;
 
@@ -170,22 +146,16 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       active.addPoint(localPos);
 
       final delta = event.delta;
+      final speed = delta.distance;
 
-      // Smoothing logic: combine current delta with previous smoothed delta
-      // to filter out high-frequency noise from touch sensor
-      final prevDelta = _smoothedDeltas[pointerId] ?? delta;
-      final smoothedDelta = Offset(prevDelta.dx * 0.7 + delta.dx * 0.3, prevDelta.dy * 0.7 + delta.dy * 0.3);
-      _smoothedDeltas[pointerId] = smoothedDelta;
-
-      if (smoothedDelta.distance > 0.3) {
-        // Balanced multiplier (3.8x) with heavy smoothing to prevent jitter
-        // but still bridge the 1-inch gap
-        active.predictedTip = localPos + smoothedDelta * 3.8;
+      if (speed > 0.5) {
+        // Conservative adaptive factor — never exceeds 1x the frame delta,
+        // so prediction can never visibly overshoot or stretch.
+        final adaptiveFactor = (speed / 15.0).clamp(0.2, 0.9);
+        active.predictedTip = localPos + delta * adaptiveFactor;
       } else {
         active.predictedTip = null;
       }
-
-      _debugTouchDownPosition = localPos;
     } else if (active is ShapeElement) {
       _activeElements[pointerId] = active.copyWith(endPoint: localPos)..invalidateBounds();
     }
@@ -195,16 +165,13 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   void _onPointerUp(PointerUpEvent event, WhiteboardProvider provider) {
     final pointerId = event.pointer;
 
-    // Final flush: ensure the last position is erased even if throttle skipped it
     if (_isUsingGestureEraser && _eraserPositions.containsKey(pointerId)) {
       provider.partialErase(event.localPosition, 50.0);
     }
 
     _pointers.remove(pointerId);
     _eraserPositions.remove(pointerId);
-    _smoothedDeltas.remove(pointerId);
 
-    // If all fingers are lifted, reset gesture eraser state
     if (_pointers.isEmpty) {
       _isUsingGestureEraser = false;
     }
@@ -235,25 +202,20 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   }
 
   void _switchToEraserMode(WhiteboardProvider provider) {
-    // Cancel all active strokes
     _activeElements.clear();
     _lastGestureEraseTime = DateTime.now();
-
-    // Start erasing for all active pointers
     for (var entry in _pointers.entries) {
       final id = entry.key;
       final event = entry.value;
       final pos = event.localPosition;
-
       _eraserPositions[id] = pos;
-      provider.partialErase(pos, 50.0); // Changed from 60.0 → 50.0
+      provider.partialErase(pos, 50.0);
     }
     _activeLayerPulse.value++;
   }
 
   @override
   Widget build(BuildContext context) {
-    // Use Selector with boardVersion to trigger rebuilds when elements are added/modified
     return Selector<WhiteboardProvider, (int, Set<String>, Path?)>(
       selector: (context, provider) => (provider.boardVersion, provider.selectedElementIds, provider.lassoPath),
       builder: (context, data, _) {
@@ -272,7 +234,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                 child: CustomPaint(
                   isComplex: true,
                   willChange: false,
-                  painter: WhiteboardPainter(
+                  foregroundPainter: WhiteboardPainter(
                     elements: elements,
                     activeElements: const [],
                     lassoPath: null,
@@ -314,7 +276,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                   ),
                 ),
               ),
-              // 2. Active Layer (Drawing Layer)
               ValueListenableBuilder<int>(
                 valueListenable: _activeLayerPulse,
                 builder: (context, _, __) {
@@ -326,20 +287,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                       activeElements: _activeElements.values.toList(),
                       lassoPath: lassoPath ?? _currentLasso,
                       selectedIds: const {},
-                      debugPoint: _debugTouchDownPosition, // Pass debug point to painter for sync
                     ),
                     size: Size.infinite,
                   );
                 },
               ),
-              // 3. Eraser indicators
               ValueListenableBuilder<int>(
                 valueListenable: _activeLayerPulse,
                 builder: (context, _, __) {
                   if (_eraserPositions.isEmpty) return const SizedBox.shrink();
 
                   if (_isUsingGestureEraser) {
-                    // Unified single icon for hand gestures
                     Offset center = Offset.zero;
                     for (var pos in _eraserPositions.values) {
                       center += pos;
@@ -362,7 +320,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                       ),
                     );
                   } else {
-                    // Individual icons for standard eraser tool
                     return Stack(
                       children: _eraserPositions.entries.map((entry) {
                         final pos = entry.value;
@@ -400,9 +357,7 @@ class WhiteboardPainter extends CustomPainter {
   final Path? lassoPath;
   final Set<String> selectedIds;
   final int version;
-  final Offset? debugPoint;
 
-  // Reusable Paint objects to avoid allocations
   final Paint _strokePaint = Paint()
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round
@@ -414,14 +369,7 @@ class WhiteboardPainter extends CustomPainter {
     ..isAntiAlias = true
     ..style = PaintingStyle.fill;
 
-  WhiteboardPainter({
-    required this.elements,
-    required this.activeElements,
-    this.lassoPath,
-    required this.selectedIds,
-    this.version = 0,
-    this.debugPoint,
-  });
+  WhiteboardPainter({required this.elements, required this.activeElements, this.lassoPath, required this.selectedIds, this.version = 0});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -432,20 +380,11 @@ class WhiteboardPainter extends CustomPainter {
       _drawElement(canvas, element, isActive: true);
     }
 
-    // Draw debug point directly in painter to ensure zero-frame sync with ink
-    /*
-    if (debugPoint != null) {
-      canvas.drawCircle(debugPoint!, 6, Paint()..color = Colors.red.withOpacity(0.5));
-    }
-    */
-
     if (lassoPath != null) {
       canvas.drawPath(lassoPath!, _fillPaint..color = Colors.blue.withValues(alpha: 0.05));
-
       _strokePaint
         ..color = Colors.blue.withValues(alpha: 0.5)
         ..strokeWidth = 1.5;
-
       _drawDashedPath(canvas, lassoPath!, _strokePaint);
     }
   }
@@ -453,7 +392,6 @@ class WhiteboardPainter extends CustomPainter {
   void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
     const dashWidth = 8.0;
     const dashSpace = 6.0;
-
     for (var metric in path.computeMetrics()) {
       double distance = 0.0;
       while (distance < metric.length) {
@@ -465,7 +403,7 @@ class WhiteboardPainter extends CustomPainter {
   }
 
   void _drawElement(Canvas canvas, BoardElement element, {bool isActive = false}) {
-    if (element is ImageElement) return; // Images are handled in the widget tree
+    if (element is ImageElement) return;
 
     final isSelected = selectedIds.contains(element.id);
     final hasTransform = element.rotation != 0 || element.scale != 1.0;
@@ -489,17 +427,15 @@ class WhiteboardPainter extends CustomPainter {
       if (element.points.length == 1) {
         canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = _strokePaint.color);
       } else if (element.points.length > 1) {
-        // 1. Draw confirmed smooth path (midpoint to midpoint)
         canvas.drawPath(element.path, _strokePaint);
 
-        // 2. Draw segment from the end of the cached path to the actual pen tip
         final p1 = element.points[element.points.length - 2];
         final p2 = element.points[element.points.length - 1];
         final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
 
         canvas.drawLine(mid, p2, _strokePaint);
 
-        // 3. Draw prediction segment for active drawing (Ultra-low latency)
+        // Minimal straight prediction extension — no curve, no overshoot.
         if (isActive && element.predictedTip != null) {
           canvas.drawLine(p2, element.predictedTip!, _strokePaint);
         }
@@ -532,41 +468,167 @@ class WhiteboardPainter extends CustomPainter {
           break;
       }
 
-      // Realtime measurement label — only while actively drawing the shape
-      if (isActive) {
-        final dx = element.endPoint.dx - element.position.dx;
-        final dy = element.endPoint.dy - element.position.dy;
-
-        switch (element.shapeType) {
-          case ShapeType.circle:
-            final radius = Offset(dx, dy).distance / 2;
-            _drawMeasurementLabel(canvas, element.endPoint, 'r: ${radius.toStringAsFixed(0)}px');
-            break;
-          case ShapeType.line:
-          case ShapeType.arrow:
-            final angleDeg = atan2(dy, dx) * 180 / pi;
-            _drawMeasurementLabel(canvas, element.endPoint, '${angleDeg.toStringAsFixed(0)}°');
-            break;
-          case ShapeType.rectangle:
-            _drawMeasurementLabel(canvas, element.endPoint, '${dx.abs().toStringAsFixed(0)} × ${dy.abs().toStringAsFixed(0)}px');
-            break;
-          case ShapeType.triangle:
-            final angles = _calculateTriangleAngles(element.position, element.endPoint);
-            _drawMeasurementLabel(
-              canvas,
-              element.endPoint,
-              'A:${angles[0].toStringAsFixed(0)}° B:${angles[1].toStringAsFixed(0)}° C:${angles[2].toStringAsFixed(0)}°',
-            );
-            break;
-          case ShapeType.star:
-            break;
-        }
+      if (isActive || element.showDimensions) {
+        _drawEnhancedDimensions(canvas, element, isActive);
       }
     }
 
     if (hasTransform) {
       canvas.restore();
     }
+  }
+
+  void _drawEnhancedDimensions(Canvas canvas, ShapeElement element, bool isActive) {
+    final start = element.position;
+    final end = element.endPoint;
+    final rect = Rect.fromPoints(start, end);
+
+    switch (element.shapeType) {
+      case ShapeType.rectangle:
+        _drawRectangleDimensions(canvas, rect);
+        break;
+      case ShapeType.circle:
+        _drawCircleDimensions(canvas, rect);
+        break;
+      case ShapeType.triangle:
+        _drawTriangleDimensions(canvas, start, end);
+        break;
+      case ShapeType.line:
+        final dx = end.dx - start.dx;
+        final dy = end.dy - start.dy;
+        final length = Offset(dx, dy).distance;
+        final mid = Offset((start.dx + end.dx) / 2, (start.dy + end.dy) / 2);
+
+        double angle = atan2(dy, dx);
+        if (angle > pi / 2 || angle < -pi / 2) angle += pi;
+
+        _drawText(canvas, mid, length.toStringAsFixed(1), rotate: angle);
+        break;
+      case ShapeType.arrow:
+      case ShapeType.star:
+        break;
+    }
+  }
+
+  void _drawRectangleDimensions(Canvas canvas, Rect rect) {
+    final width = rect.width.abs();
+    final height = rect.height.abs();
+    final wStr = (width / 10).toStringAsFixed(1); // Scaled for display as in screenshot
+    final hStr = (height / 10).toStringAsFixed(1);
+
+    // Top
+    _drawText(canvas, Offset(rect.left + rect.width / 2, rect.top - 15), wStr);
+    // Bottom
+    _drawText(canvas, Offset(rect.left + rect.width / 2, rect.bottom + 15), wStr);
+    // Left
+    _drawText(canvas, Offset(rect.left - 25, rect.top + rect.height / 2), hStr, rotate: -pi / 2);
+    // Right
+    _drawText(canvas, Offset(rect.right + 25, rect.top + rect.height / 2), hStr, rotate: pi / 2);
+  }
+
+  void _drawCircleDimensions(Canvas canvas, Rect rect) {
+    final center = rect.center;
+    final radiusX = rect.width.abs() / 2;
+    final radiusY = rect.height.abs() / 2;
+    final rStr = (radiusX / 10).toStringAsFixed(1);
+
+    final dashPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.5)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    // Horizontal radius line
+    final hPath = Path()
+      ..moveTo(center.dx, center.dy)
+      ..lineTo(center.dx + radiusX, center.dy);
+    _drawDashedPath(canvas, hPath, dashPaint);
+    _drawText(canvas, Offset(center.dx + radiusX / 2, center.dy - 10), rStr);
+
+    // Vertical radius line
+    final vPath = Path()
+      ..moveTo(center.dx, center.dy)
+      ..lineTo(center.dx, center.dy + radiusY);
+    _drawDashedPath(canvas, vPath, dashPaint);
+    _drawText(canvas, Offset(center.dx - 25, center.dy + radiusY / 2), rStr, rotate: -pi / 2);
+  }
+
+  void _drawTriangleDimensions(Canvas canvas, Offset start, Offset end) {
+    final rect = Rect.fromPoints(start, end);
+    final apex = Offset(rect.left + rect.width / 2, rect.top);
+    final bottomRight = Offset(rect.right, rect.bottom);
+    final bottomLeft = Offset(rect.left, rect.bottom);
+
+    // Sides
+    void drawSideLen(Offset p1, Offset p2, bool isBottom) {
+      final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      final dist = (p1 - p2).distance;
+      double angle = atan2(p2.dy - p1.dy, p2.dx - p1.dx);
+
+      // Normalize angle to keep text upright
+      if (angle > pi / 2 || angle < -pi / 2) {
+        angle += pi;
+      }
+
+      // Offset text slightly from the line.
+      // For the bottom line, we want it below the line.
+      // For sides, we want it outside.
+      final normalOffset = isBottom ? 18.0 : 15.0;
+      final normal = Offset(-sin(angle), cos(angle)) * normalOffset;
+
+      _drawText(canvas, mid + normal, (dist / 10).toStringAsFixed(1), rotate: angle);
+    }
+
+    drawSideLen(bottomLeft, apex, false);
+    drawSideLen(apex, bottomRight, false);
+    drawSideLen(bottomRight, bottomLeft, true);
+  }
+
+  void _drawAngle(Canvas canvas, Offset vertex, Offset p1, Offset p2, double angleDeg) {
+    if (angleDeg.isNaN || angleDeg == 0) return;
+
+    final v1 = (p1 - vertex);
+    final v2 = (p2 - vertex);
+    double a1 = v1.direction;
+    double a2 = v2.direction;
+
+    double sweep = a2 - a1;
+    while (sweep < -pi) {
+      sweep += 2 * pi;
+    }
+    while (sweep > pi) {
+      sweep -= 2 * pi;
+    }
+
+    final radius = 22.0;
+    canvas.drawArc(
+      Rect.fromCircle(center: vertex, radius: radius),
+      a1,
+      sweep,
+      false,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.6)
+        ..strokeWidth = 1.2
+        ..style = PaintingStyle.stroke,
+    );
+
+    final textAngle = a1 + sweep / 2;
+    final textPos = vertex + Offset.fromDirection(textAngle, radius + 15);
+    _drawText(canvas, textPos, '${angleDeg.toStringAsFixed(0)}°', fontSize: 11);
+  }
+
+  void _drawText(Canvas canvas, Offset position, String text, {double rotate = 0, double fontSize = 12}) {
+    final textSpan = TextSpan(
+      text: text,
+      style: TextStyle(color: Colors.black, fontSize: fontSize, fontWeight: FontWeight.normal),
+    );
+    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
+    textPainter.layout();
+
+    canvas.save();
+    canvas.translate(position.dx, position.dy);
+    canvas.rotate(rotate);
+    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
+    canvas.restore();
   }
 
   void _drawMeasurementLabel(Canvas canvas, Offset anchor, String text) {

@@ -26,33 +26,75 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   }
 
   void _handleSave() async {
+    // Yeh screen ka asli context/messenger hai — dialog se pehle capture karo
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
         title: const Text('Export Board', style: TextStyle(color: Colors.white)),
-        content: const Text('Do you want to save this slide as a PNG image in your gallery?', style: TextStyle(color: Colors.grey)),
+        content: const Text('Choose a format to save your slide.', style: TextStyle(color: Colors.grey)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               try {
                 final path = await _storageService.exportToImage(_canvasKey);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(backgroundColor: Colors.green, content: Text('Image saved successfully!')));
+                if (mounted) {
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.green,
+                      content: Text('Image saved successfully!'),
+                    ),
+                  );
+                }
               } catch (e) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to save image: $e')));
+                if (mounted) {
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.red,
+                      content: Text('Failed to save image: $e'),
+                    ),
+                  );
+                }
               }
             },
             child: const Text(
               'Save as PNG',
+              style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              try {
+                final path = await _storageService.exportToPdf(_canvasKey);
+                if (path != null && mounted) {
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.green,
+                      content: Text('PDF saved successfully!'),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.red,
+                      content: Text('Failed to save PDF: $e'),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              'Save as PDF',
               style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
             ),
           ),

@@ -126,7 +126,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
   WhiteboardTool _currentTool = WhiteboardTool.pen;
   Color _currentColor = Colors.black;
-  double _strokeWidth = 3.0;
+  double _strokeWidth = 2.0;
   ShapeType _currentShapeType = ShapeType.rectangle;
 
   final Set<String> _selectedElementIds = {};
