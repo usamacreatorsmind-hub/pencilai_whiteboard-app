@@ -5,6 +5,7 @@ import '../widgets/whiteboard_canvas.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/object_handles.dart';
 import '../widgets/page_switcher.dart';
+import '../widgets/document_overlay_panel.dart';
 import '../services/board_storage_service.dart';
 
 class WhiteboardScreen extends StatefulWidget {
@@ -160,6 +161,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 child: const Icon(LucideIcons.save, color: Colors.white),
               ),
             ),
+            const DocumentOverlayPanel(),
           ],
         ),
       ),

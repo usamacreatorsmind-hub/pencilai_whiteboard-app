@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'stroke_element.dart';
 import 'shape_element.dart';
 import 'image_element.dart';
+import 'document_element.dart';
 
 abstract class BoardElement {
   final String id;
@@ -10,12 +11,7 @@ abstract class BoardElement {
   double rotation;
   double scale;
 
-  BoardElement({
-    required this.id,
-    required this.position,
-    this.rotation = 0.0,
-    this.scale = 1.0,
-  });
+  BoardElement({required this.id, required this.position, this.rotation = 0.0, this.scale = 1.0});
 
   Rect? _cachedBounds;
 
@@ -30,21 +26,18 @@ abstract class BoardElement {
         return ShapeElement.fromJson(json);
       case 'image':
         return ImageElement.fromJson(json);
+      case 'document':
+        return DocumentElement.fromJson(json);
       default:
         throw Exception('Unknown BoardElement type: $type');
     }
   }
 
-  BoardElement copyWith({
-    String? id,
-    Offset? position,
-    double? rotation,
-    double? scale,
-  });
+  BoardElement copyWith({String? id, Offset? position, double? rotation, double? scale});
 
   Rect getRawBounds() {
     if (_cachedBounds != null) return _cachedBounds!;
-    
+
     Rect bounds;
     if (this is StrokeElement) {
       final points = (this as StrokeElement).points;
@@ -69,10 +62,13 @@ abstract class BoardElement {
     } else if (this is ImageElement) {
       final img = this as ImageElement;
       bounds = Rect.fromLTWH(img.position.dx, img.position.dy, img.size.width, img.size.height);
+    } else if (this is DocumentElement) {
+      final doc = this as DocumentElement;
+      bounds = Rect.fromLTWH(doc.position.dx, doc.position.dy, doc.size.width, doc.size.height);
     } else {
       bounds = Rect.fromLTWH(position.dx, position.dy, 100, 100);
     }
-    
+
     _cachedBounds = bounds;
     return bounds;
   }

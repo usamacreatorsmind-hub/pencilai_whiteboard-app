@@ -6,6 +6,7 @@ import '../models/board_page.dart';
 import '../models/stroke_element.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
+import '../models/document_element.dart';
 
 enum WhiteboardTool { pen, eraser, shape, image, select }
 
@@ -127,6 +128,7 @@ class WhiteboardProvider extends ChangeNotifier {
   WhiteboardTool _currentTool = WhiteboardTool.pen;
   Color _currentColor = Colors.black;
   double _strokeWidth = 2.0;
+  PenType _currentPenType = PenType.pen;
   ShapeType _currentShapeType = ShapeType.rectangle;
 
   final Set<String> _selectedElementIds = {};
@@ -143,11 +145,55 @@ class WhiteboardProvider extends ChangeNotifier {
   WhiteboardTool get currentTool => _currentTool;
   Color get currentColor => _currentColor;
   double get strokeWidth => _strokeWidth;
+  PenType get currentPenType => _currentPenType;
   ShapeType get currentShapeType => _currentShapeType;
   Set<String> get selectedElementIds => _selectedElementIds;
   Path? get lassoPath => _lassoPath;
   bool get canUndo => _undoStack.isNotEmpty;
   bool get canRedo => _redoStack.isNotEmpty;
+
+  DocumentElement? _activeOverlayDocument;
+  bool _isDocumentOverlayOpen = false;
+  Offset _overlayPosition = const Offset(150, 100);
+  Size _overlaySize = const Size(480, 550);
+
+  DocumentElement? get activeOverlayDocument => _activeOverlayDocument;
+  bool get isDocumentOverlayOpen => _isDocumentOverlayOpen;
+  Offset get overlayPosition => _overlayPosition;
+  Size get overlaySize => _overlaySize;
+
+  void openDocumentOverlay(DocumentElement doc) {
+    _activeOverlayDocument = doc;
+    _isDocumentOverlayOpen = true;
+    _notify();
+  }
+
+  void updateActiveDocumentPreviewUrl(String url) {
+    if (_activeOverlayDocument != null) {
+      _activeOverlayDocument = _activeOverlayDocument!.copyWith(remotePreviewUrl: url);
+      final index = currentPage.elements.indexWhere((e) => e.id == _activeOverlayDocument!.id);
+      if (index != -1) {
+        currentPage.elements[index] = _activeOverlayDocument!;
+      }
+      _notify();
+    }
+  }
+
+  void closeDocumentOverlay() {
+    _activeOverlayDocument = null;
+    _isDocumentOverlayOpen = false;
+    _notify();
+  }
+
+  void updateOverlayPosition(Offset pos) {
+    _overlayPosition = pos;
+    notifyListeners();
+  }
+
+  void updateOverlaySize(Size size) {
+    _overlaySize = size;
+    notifyListeners();
+  }
 
   void _notify() {
     _boardVersion++;
@@ -168,6 +214,11 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void setStrokeWidth(double width) {
     _strokeWidth = width;
+    _notify();
+  }
+
+  void setPenType(PenType type) {
+    _currentPenType = type;
     _notify();
   }
 

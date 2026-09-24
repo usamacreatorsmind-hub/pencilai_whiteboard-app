@@ -9,6 +9,7 @@ import '../models/board_element.dart';
 import '../models/stroke_element.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
+import '../models/document_element.dart';
 
 class WhiteboardCanvas extends StatefulWidget {
   const WhiteboardCanvas({super.key});
@@ -87,6 +88,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         points: [localPos],
         color: provider.currentColor,
         strokeWidth: provider.strokeWidth,
+        penType: provider.currentPenType,
       );
     } else if (provider.currentTool == WhiteboardTool.shape) {
       _activeElements[pointerId] = ShapeElement(
@@ -403,7 +405,7 @@ class WhiteboardPainter extends CustomPainter {
   }
 
   void _drawElement(Canvas canvas, BoardElement element, {bool isActive = false}) {
-    if (element is ImageElement) return;
+    if (element is ImageElement || element is DocumentElement) return;
 
     final isSelected = selectedIds.contains(element.id);
     final hasTransform = element.rotation != 0 || element.scale != 1.0;
@@ -419,25 +421,147 @@ class WhiteboardPainter extends CustomPainter {
     }
 
     if (element is StrokeElement) {
-      _strokePaint
-        ..color = isSelected ? Colors.blue : element.color
-        ..strokeWidth = isSelected ? element.strokeWidth + 1 : element.strokeWidth
-        ..maskFilter = isSelected ? const MaskFilter.blur(BlurStyle.outer, 3) : null;
+      if (isSelected) {
+        _strokePaint
+          ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 3)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..color = Colors.blue
+          ..strokeWidth = element.strokeWidth + 1;
 
-      if (element.points.length == 1) {
-        canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = _strokePaint.color);
-      } else if (element.points.length > 1) {
-        canvas.drawPath(element.path, _strokePaint);
+        if (element.points.length == 1) {
+          canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = Colors.blue);
+        } else if (element.points.length > 1) {
+          canvas.drawPath(element.path, _strokePaint);
+          final p1 = element.points[element.points.length - 2];
+          final p2 = element.points[element.points.length - 1];
+          final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+          canvas.drawLine(mid, p2, _strokePaint);
+          if (isActive && element.predictedTip != null) {
+            canvas.drawLine(p2, element.predictedTip!, _strokePaint);
+          }
+        }
+      } else {
+        // Not selected - render based on penType with high fidelity
+        switch (element.penType) {
+          case PenType.pen:
+            // Standard crisp ballpoint pen
+            _strokePaint
+              ..maskFilter = null
+              ..strokeCap = StrokeCap.round
+              ..strokeJoin = StrokeJoin.round
+              ..color = element.color
+              ..strokeWidth = element.strokeWidth;
 
-        final p1 = element.points[element.points.length - 2];
-        final p2 = element.points[element.points.length - 1];
-        final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+            if (element.points.length == 1) {
+              canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = element.color);
+            } else if (element.points.length > 1) {
+              canvas.drawPath(element.path, _strokePaint);
+              final p1 = element.points[element.points.length - 2];
+              final p2 = element.points[element.points.length - 1];
+              final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+              canvas.drawLine(mid, p2, _strokePaint);
+              if (isActive && element.predictedTip != null) {
+                canvas.drawLine(p2, element.predictedTip!, _strokePaint);
+              }
+            }
+            break;
 
-        canvas.drawLine(mid, p2, _strokePaint);
+          case PenType.fountainPen:
+            // Dynamic calligraphic fountain pen: thickness varies naturally with stroke direction (thick downstrokes, thin upstrokes)
+            if (element.points.length == 1) {
+              canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = element.color);
+            } else if (element.points.length > 1) {
+              final calligraphyPaint = Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeCap = StrokeCap.round
+                ..strokeJoin = StrokeJoin.round
+                ..color = element.color;
 
-        // Minimal straight prediction extension — no curve, no overshoot.
-        if (isActive && element.predictedTip != null) {
-          canvas.drawLine(p2, element.predictedTip!, _strokePaint);
+              for (var i = 0; i < element.points.length - 1; i++) {
+                final p1 = element.points[i];
+                final p2 = element.points[i + 1];
+                final dx = p2.dx - p1.dx;
+                final dy = p2.dy - p1.dy;
+                final length = sqrt(dx * dx + dy * dy);
+
+                double factor = 1.0;
+                if (length > 0) {
+                  final sinTheta = dy / length; // positive on downstrokes, negative on upstrokes
+                  factor = 0.5 + (sinTheta * 1.5).clamp(-0.4, 1.8);
+                }
+
+                calligraphyPaint.strokeWidth = (element.strokeWidth * factor).clamp(1.0, element.strokeWidth * 2.8);
+                canvas.drawLine(p1, p2, calligraphyPaint);
+              }
+
+              if (isActive && element.predictedTip != null && element.points.isNotEmpty) {
+                final lastP = element.points.last;
+                calligraphyPaint.strokeWidth = element.strokeWidth;
+                canvas.drawLine(lastP, element.predictedTip!, calligraphyPaint);
+              }
+            }
+            break;
+
+          case PenType.brush:
+            // Smooth organic tapered brush: clean single-stroke with fine tapered endpoints and lush middle
+            if (element.points.length == 1) {
+              final brushDot = Paint()
+                ..style = PaintingStyle.fill
+                ..color = element.color;
+              canvas.drawCircle(element.points[0], element.strokeWidth / 2, brushDot);
+            } else if (element.points.length > 1) {
+              final brushPaint = Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeCap = StrokeCap.round
+                ..strokeJoin = StrokeJoin.round
+                ..color = element.color;
+
+              final totalPoints = element.points.length;
+              for (var i = 0; i < totalPoints - 1; i++) {
+                final p1 = element.points[i];
+                final p2 = element.points[i + 1];
+
+                final progress = i / totalPoints;
+                final taper = sin(progress * pi); // 0 at start/end, 1 at center
+                final dynamicWidth = element.strokeWidth * (0.3 + taper * 0.9);
+
+                brushPaint.strokeWidth = dynamicWidth.clamp(1.0, element.strokeWidth * 2.2);
+                canvas.drawLine(p1, p2, brushPaint);
+              }
+
+              if (isActive && element.predictedTip != null && element.points.isNotEmpty) {
+                final lastP = element.points.last;
+                brushPaint.strokeWidth = element.strokeWidth * 0.4;
+                canvas.drawLine(lastP, element.predictedTip!, brushPaint);
+              }
+            }
+            break;
+
+          case PenType.marker:
+            // Semi-transparent highlighter / marker with round caps to avoid square ending blocks
+            final markerWidth = element.strokeWidth * 1.4;
+            _strokePaint
+              ..maskFilter = null
+              ..strokeCap = StrokeCap.round
+              ..strokeJoin = StrokeJoin.round
+              ..strokeWidth = markerWidth
+              ..color = element.color.withOpacity(0.40);
+
+            if (element.points.length == 1) {
+              canvas.drawCircle(element.points[0], markerWidth / 2, _fillPaint..color = element.color.withOpacity(0.40));
+            } else if (element.points.length > 1) {
+              canvas.drawPath(element.path, _strokePaint);
+
+              final p1 = element.points[element.points.length - 2];
+              final p2 = element.points[element.points.length - 1];
+              final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+              canvas.drawLine(mid, p2, _strokePaint);
+              if (isActive && element.predictedTip != null) {
+                canvas.drawLine(p2, element.predictedTip!, _strokePaint);
+              }
+            }
+            break;
         }
       }
     } else if (element is ShapeElement) {

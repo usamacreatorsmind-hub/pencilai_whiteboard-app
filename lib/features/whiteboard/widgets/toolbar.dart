@@ -3,10 +3,13 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:uuid/uuid.dart';
 import '../state/whiteboard_provider.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
+import '../models/document_element.dart';
+import '../models/stroke_element.dart';
 
 class WhiteboardToolbar extends StatelessWidget {
   const WhiteboardToolbar({super.key});
@@ -31,47 +34,118 @@ class WhiteboardToolbar extends StatelessWidget {
         builder: (context, setDialogState) => AlertDialog(
           contentPadding: EdgeInsets.zero,
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           content: Container(
-            width: 400,
-            padding: const EdgeInsets.all(24),
+            width: 340,
+            padding: const EdgeInsets.all(16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Brush Size', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 10),
-                // Size Slider
+                const Text('Pen Style', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 8),
+                // Pen Type Selector (Compact Row)
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          activeTrackColor: provider.currentColor,
-                          thumbColor: provider.currentColor,
-                          overlayColor: provider.currentColor.withOpacity(0.2),
-                        ),
-                        child: Slider(
-                          value: provider.strokeWidth,
-                          min: 1,
-                          max: 40,
-                          onChanged: (value) {
-                            provider.setStrokeWidth(value);
-                            setDialogState(() {});
-                          },
-                        ),
-                      ),
+                    _PenTypeOption(
+                      label: 'Pen',
+                      icon: LucideIcons.pencil,
+                      color: Colors.blue,
+                      isSelected: provider.currentPenType == PenType.pen,
+                      onTap: () {
+                        provider.setPenType(PenType.pen);
+                        setDialogState(() {});
+                      },
                     ),
-                    Text(provider.strokeWidth.toInt().toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    _PenTypeOption(
+                      label: 'Fountain',
+                      icon: LucideIcons.penTool,
+                      color: Colors.purple,
+                      isSelected: provider.currentPenType == PenType.fountainPen,
+                      onTap: () {
+                        provider.setPenType(PenType.fountainPen);
+                        setDialogState(() {});
+                      },
+                    ),
+                    _PenTypeOption(
+                      label: 'Brush',
+                      icon: LucideIcons.paintbrush,
+                      color: Colors.orange,
+                      isSelected: provider.currentPenType == PenType.brush,
+                      onTap: () {
+                        provider.setPenType(PenType.brush);
+                        setDialogState(() {});
+                      },
+                    ),
+                    _PenTypeOption(
+                      label: 'Marker',
+                      icon: LucideIcons.highlighter,
+                      color: Colors.green,
+                      isSelected: provider.currentPenType == PenType.marker,
+                      onTap: () {
+                        provider.setPenType(PenType.marker);
+                        setDialogState(() {});
+                      },
+                    ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                const Text('Colors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 15),
-                // Color Grid
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Thickness', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    Text(
+                      '${provider.strokeWidth.toInt()}px',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                // Size Slider
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: provider.currentColor,
+                    thumbColor: provider.currentColor,
+                    overlayColor: provider.currentColor.withOpacity(0.2),
+                    trackHeight: 4,
+                  ),
+                  child: Slider(
+                    value: provider.strokeWidth,
+                    min: 1,
+                    max: 40,
+                    onChanged: (value) {
+                      provider.setStrokeWidth(value);
+                      setDialogState(() {});
+                    },
+                  ),
+                ),
+                // Realtime Thickness Preview
+                Container(
+                  height: 36,
+                  width: double.infinity,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Container(
+                    height: provider.strokeWidth.clamp(1.0, 28.0),
+                    width: 140,
+                    decoration: BoxDecoration(
+                      color: provider.currentColor.value == Colors.white.value ? Colors.grey[800] : provider.currentColor,
+                      borderRadius: BorderRadius.circular(provider.strokeWidth / 2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text('Colors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 10),
+                // Color Grid (Compact)
                 Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     ...[
                       Colors.white,
@@ -99,8 +173,8 @@ class WhiteboardToolbar extends StatelessWidget {
                     GestureDetector(
                       onTap: () => _showColorPicker(context, provider),
                       child: Container(
-                        width: 40,
-                        height: 40,
+                        width: 36,
+                        height: 36,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: Colors.grey[300]!),
@@ -110,7 +184,7 @@ class WhiteboardToolbar extends StatelessWidget {
                             end: Alignment.bottomRight,
                           ),
                         ),
-                        child: const Icon(Icons.colorize, size: 20, color: Colors.white),
+                        child: const Icon(Icons.colorize, size: 18, color: Colors.white),
                       ),
                     ),
                   ],
@@ -121,56 +195,7 @@ class WhiteboardToolbar extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                'Done',
-                style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSizePicker(BuildContext context, WhiteboardProvider provider) {
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text('Brush Size', style: TextStyle(color: Colors.white)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Slider(
-                      value: provider.strokeWidth,
-                      min: 1,
-                      max: 40,
-                      onChanged: (value) {
-                        provider.setStrokeWidth(value);
-                        setDialogState(() {});
-                      },
-                    ),
-                  ),
-                  Text(provider.strokeWidth.toInt().toString(), style: const TextStyle(color: Colors.white, fontSize: 18)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Preview circle
-              Container(
-                width: provider.strokeWidth,
-                height: provider.strokeWidth,
-                decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Done', style: TextStyle(color: Colors.blue)),
+              child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -288,6 +313,29 @@ class WhiteboardToolbar extends StatelessWidget {
     }
   }
 
+  Future<void> _pickDocument(BuildContext context, WhiteboardProvider provider) async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final file = result.files.single;
+        final doc = DocumentElement(
+          id: const Uuid().v4(),
+          position: const Offset(150, 150),
+          filePath: file.path!,
+          fileName: file.name,
+          size: const Size(450, 320),
+        );
+        provider.openDocumentOverlay(doc);
+      }
+    } catch (e) {
+      debugPrint("Error picking document: $e");
+    }
+  }
+
   IconData _getShapeIcon(ShapeType type) {
     switch (type) {
       case ShapeType.line:
@@ -374,6 +422,13 @@ class WhiteboardToolbar extends StatelessWidget {
               isActive: false,
               iconSize: iconSize,
               onTap: () => _pickImage(context, provider),
+            ),
+            _ToolButton(
+              icon: LucideIcons.fileText,
+              label: 'PPT/PDF',
+              isActive: false,
+              iconSize: iconSize,
+              onTap: () => _pickDocument(context, provider),
             ),
             const VerticalDivider(color: Colors.white24, width: 8, indent: 6, endIndent: 6),
 
@@ -497,6 +552,47 @@ class _ColorButton extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
         ),
         child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
+      ),
+    );
+  }
+}
+
+class _PenTypeOption extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _PenTypeOption({required this.label, required this.icon, required this.color, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withOpacity(0.15) : Colors.grey[100],
+          border: Border.all(color: isSelected ? color : Colors.grey[300]!, width: isSelected ? 2 : 1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? color : Colors.black87,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

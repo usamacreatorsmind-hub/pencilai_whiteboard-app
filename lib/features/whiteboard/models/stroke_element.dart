@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'board_element.dart';
 
+enum PenType { pen, fountainPen, brush, marker }
+
 class StrokeElement extends BoardElement {
   final List<Offset> points;
   final Color color;
   final double strokeWidth;
+  final PenType penType;
 
   StrokeElement({
     required super.id,
@@ -12,6 +15,7 @@ class StrokeElement extends BoardElement {
     required this.points,
     required this.color,
     required this.strokeWidth,
+    this.penType = PenType.pen,
     super.rotation,
     super.scale,
   });
@@ -85,6 +89,7 @@ class StrokeElement extends BoardElement {
     'points': points.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
     'color': color.value,
     'strokeWidth': strokeWidth,
+    'penType': penType.name,
   };
 
   factory StrokeElement.fromJson(Map<String, dynamic> json) {
@@ -96,6 +101,10 @@ class StrokeElement extends BoardElement {
       points: (json['points'] as List).map((p) => Offset(p['dx'], p['dy'])).toList(),
       color: Color(json['color']),
       strokeWidth: json['strokeWidth'].toDouble(),
+      penType: PenType.values.firstWhere(
+        (e) => e.name == json['penType'],
+        orElse: () => PenType.pen,
+      ),
     );
   }
 
@@ -108,6 +117,7 @@ class StrokeElement extends BoardElement {
     List<Offset>? points,
     Color? color,
     double? strokeWidth,
+    PenType? penType,
   }) {
     return StrokeElement(
       id: id ?? this.id,
@@ -117,6 +127,7 @@ class StrokeElement extends BoardElement {
       points: points ?? this.points,
       color: color ?? this.color,
       strokeWidth: strokeWidth ?? this.strokeWidth,
+      penType: penType ?? this.penType,
     );
   }
 }
