@@ -20,6 +20,7 @@ class ShapeElement extends BoardElement {
     this.showDimensions = true,
     super.rotation,
     super.scale,
+    super.docPage,
   });
 
   @override
@@ -29,6 +30,7 @@ class ShapeElement extends BoardElement {
         'position': {'dx': position.dx, 'dy': position.dy},
         'rotation': rotation,
         'scale': scale,
+        'docPage': docPage,
         'shapeType': shapeType.name,
         'endPoint': {'dx': endPoint.dx, 'dy': endPoint.dy},
         'color': color.value,
@@ -42,6 +44,7 @@ class ShapeElement extends BoardElement {
       position: Offset(json['position']['dx'], json['position']['dy']),
       rotation: json['rotation']?.toDouble() ?? 0.0,
       scale: json['scale']?.toDouble() ?? 1.0,
+      docPage: json['docPage'],
       shapeType: ShapeType.values.byName(json['shapeType']),
       endPoint: Offset(json['endPoint']['dx'], json['endPoint']['dy']),
       color: Color(json['color']),
@@ -56,6 +59,7 @@ class ShapeElement extends BoardElement {
     Offset? position,
     double? rotation,
     double? scale,
+    int? docPage,
     ShapeType? shapeType,
     Offset? endPoint,
     Color? color,
@@ -67,6 +71,7 @@ class ShapeElement extends BoardElement {
       position: position ?? this.position,
       rotation: rotation ?? this.rotation,
       scale: scale ?? this.scale,
+      docPage: docPage ?? this.docPage,
       shapeType: shapeType ?? this.shapeType,
       endPoint: endPoint ?? this.endPoint,
       color: color ?? this.color,

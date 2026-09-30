@@ -48,6 +48,17 @@ class RemoveElementsCommand extends Command {
   }
 }
 
+enum HandleDirection {
+  topLeft,
+  topCenter,
+  topRight,
+  middleRight,
+  bottomRight,
+  bottomCenter,
+  bottomLeft,
+  middleLeft,
+}
+
 class MultiTransformCommand extends Command {
   final int pageIndex;
   final List<TransformData> transforms;
@@ -61,6 +72,10 @@ class MultiTransformCommand extends Command {
       element.position = data.newPos;
       element.rotation = data.newRot;
       element.scale = data.newScale;
+      if (data.newSize != null) {
+        if (element is ImageElement) element.size = data.newSize!;
+        if (element is DocumentElement) element.size = data.newSize!;
+      }
       _updateInternalPoints(element, data.newPos - data.oldPos);
       element.invalidateBounds();
       element.invalidatePath(); // Sync selection box and path
@@ -74,6 +89,10 @@ class MultiTransformCommand extends Command {
       element.position = data.oldPos;
       element.rotation = data.oldRot;
       element.scale = data.oldScale;
+      if (data.oldSize != null) {
+        if (element is ImageElement) element.size = data.oldSize!;
+        if (element is DocumentElement) element.size = data.oldSize!;
+      }
       _updateInternalPoints(element, data.oldPos - data.newPos);
       element.invalidateBounds();
       element.invalidatePath(); // Sync selection box and path
@@ -96,11 +115,17 @@ class TransformData {
   final Offset oldPos, newPos;
   final double oldRot, newRot;
   final double oldScale, newScale;
+  final Size? oldSize, newSize;
   TransformData({
     required this.id,
-    required this.oldPos, required this.newPos,
-    required this.oldRot, required this.newRot,
-    required this.oldScale, required this.newScale,
+    required this.oldPos,
+    required this.newPos,
+    required this.oldRot,
+    required this.newRot,
+    required this.oldScale,
+    required this.newScale,
+    this.oldSize,
+    this.newSize,
   });
 }
 
@@ -154,17 +179,58 @@ class WhiteboardProvider extends ChangeNotifier {
 
   DocumentElement? _activeOverlayDocument;
   bool _isDocumentOverlayOpen = false;
+  bool _isDocumentOverlayMinimized = false;
+  int _overlayCurrentPage = 1;
+  int _overlayTotalPages = 1;
   Offset _overlayPosition = const Offset(150, 100);
   Size _overlaySize = const Size(480, 550);
 
   DocumentElement? get activeOverlayDocument => _activeOverlayDocument;
   bool get isDocumentOverlayOpen => _isDocumentOverlayOpen;
+  bool get isDocumentOverlayMinimized => _isDocumentOverlayMinimized;
+  int get overlayCurrentPage => _overlayCurrentPage;
+  int get overlayTotalPages => _overlayTotalPages;
   Offset get overlayPosition => _overlayPosition;
   Size get overlaySize => _overlaySize;
+
+  Color _canvasBackgroundColor = Colors.white;
+  Color get canvasBackgroundColor => _canvasBackgroundColor;
+
+  void setCanvasBackgroundColor(Color color) {
+    _canvasBackgroundColor = color;
+    _notify();
+  }
 
   void openDocumentOverlay(DocumentElement doc) {
     _activeOverlayDocument = doc;
     _isDocumentOverlayOpen = true;
+    _isDocumentOverlayMinimized = false;
+    _overlayCurrentPage = 1;
+    _overlayTotalPages = 10;
+    _currentTool = WhiteboardTool.select;
+    _notify();
+  }
+
+  void updateOverlayPageInfo(int page, int totalPages) {
+    bool changed = false;
+    if (page > 0 && _overlayCurrentPage != page) {
+      _overlayCurrentPage = page;
+      changed = true;
+    }
+    if (totalPages > 0 && _overlayTotalPages != totalPages) {
+      _overlayTotalPages = totalPages;
+      changed = true;
+    }
+    if (changed) _notify();
+  }
+
+  void toggleDocumentOverlayMinimize() {
+    _isDocumentOverlayMinimized = !_isDocumentOverlayMinimized;
+    _notify();
+  }
+
+  void setDocumentOverlayMinimized(bool minimized) {
+    _isDocumentOverlayMinimized = minimized;
     _notify();
   }
 
@@ -182,6 +248,9 @@ class WhiteboardProvider extends ChangeNotifier {
   void closeDocumentOverlay() {
     _activeOverlayDocument = null;
     _isDocumentOverlayOpen = false;
+    _isDocumentOverlayMinimized = false;
+    _overlayCurrentPage = 1;
+    _overlayTotalPages = 1;
     _notify();
   }
 
@@ -250,6 +319,7 @@ class WhiteboardProvider extends ChangeNotifier {
       // Find all elements whose center or any point is inside the lasso
       _selectedElementIds.clear();
       for (var element in currentPage.elements) {
+        if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
         final bounds = element.getRawBounds();
         // Professional check: if the center of the element is within the lasso path
         if (path.contains(bounds.center)) {
@@ -270,6 +340,9 @@ class WhiteboardProvider extends ChangeNotifier {
 
   // Commands
   void addElement(BoardElement element) {
+    if (_isDocumentOverlayOpen && element.docPage == null) {
+      element.docPage = _overlayCurrentPage;
+    }
     final command = AddElementCommand(element, _currentPageIndex);
     _executeCommand(command);
   }
@@ -284,7 +357,10 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void clearCurrentPage() {
     if (currentPage.elements.isEmpty) return;
-    final command = ClearPageCommand(List.from(currentPage.elements), _currentPageIndex);
+    final drawingsToRemove = currentPage.elements.where((e) => e is StrokeElement || e is ShapeElement).toList();
+    if (drawingsToRemove.isEmpty) return;
+
+    final command = RemoveElementsCommand(drawingsToRemove, _currentPageIndex);
     _executeCommand(command);
     clearSelection();
   }
@@ -296,13 +372,152 @@ class WhiteboardProvider extends ChangeNotifier {
     _startTransforms.clear();
     for (var id in _selectedElementIds) {
       final e = currentPage.elements.firstWhere((el) => el.id == id);
+      Size? elementSize;
+      if (e is ImageElement) elementSize = e.size;
+      if (e is DocumentElement) elementSize = e.size;
+
       _startTransforms[id] = TransformData(
         id: id,
-        oldPos: e.position, newPos: e.position,
-        oldRot: e.rotation, newRot: e.rotation,
-        oldScale: e.scale, newScale: e.scale,
+        oldPos: e.position,
+        newPos: e.position,
+        oldRot: e.rotation,
+        newRot: e.rotation,
+        oldScale: e.scale,
+        newScale: e.scale,
+        oldSize: elementSize,
+        newSize: elementSize,
       );
     }
+  }
+
+  void resizeSelectedElement(HandleDirection direction, Offset delta) {
+    for (var id in _selectedElementIds) {
+      final element = currentPage.elements.firstWhere((e) => e.id == id);
+
+      if (element is ImageElement || element is DocumentElement) {
+        final Size currentSize = element is ImageElement ? element.size : (element as DocumentElement).size;
+
+        double currentW = currentSize.width * element.scale;
+        double currentH = currentSize.height * element.scale;
+
+        double left = element.position.dx;
+        double top = element.position.dy;
+        double newW = currentW;
+        double newH = currentH;
+
+        const double minDimension = 40.0;
+
+        switch (direction) {
+          case HandleDirection.middleRight:
+            newW = (currentW + delta.dx).clamp(minDimension, 10000.0);
+            break;
+
+          case HandleDirection.middleLeft:
+            final maxDx = currentW - minDimension;
+            final clampedDx = delta.dx.clamp(-10000.0, maxDx);
+            left += clampedDx;
+            newW = currentW - clampedDx;
+            break;
+
+          case HandleDirection.bottomCenter:
+            newH = (currentH + delta.dy).clamp(minDimension, 10000.0);
+            break;
+
+          case HandleDirection.topCenter:
+            final maxDy = currentH - minDimension;
+            final clampedDy = delta.dy.clamp(-10000.0, maxDy);
+            top += clampedDy;
+            newH = currentH - clampedDy;
+            break;
+
+          case HandleDirection.bottomRight:
+            newW = (currentW + delta.dx).clamp(minDimension, 10000.0);
+            newH = (currentH + delta.dy).clamp(minDimension, 10000.0);
+            break;
+
+          case HandleDirection.bottomLeft:
+            final maxDx = currentW - minDimension;
+            final clampedDx = delta.dx.clamp(-10000.0, maxDx);
+            left += clampedDx;
+            newW = currentW - clampedDx;
+            newH = (currentH + delta.dy).clamp(minDimension, 10000.0);
+            break;
+
+          case HandleDirection.topRight:
+            newW = (currentW + delta.dx).clamp(minDimension, 10000.0);
+            final maxDy = currentH - minDimension;
+            final clampedDy = delta.dy.clamp(-10000.0, maxDy);
+            top += clampedDy;
+            newH = currentH - clampedDy;
+            break;
+
+          case HandleDirection.topLeft:
+            final maxDx = currentW - minDimension;
+            final clampedDx = delta.dx.clamp(-10000.0, maxDx);
+            left += clampedDx;
+            newW = currentW - clampedDx;
+
+            final maxDy = currentH - minDimension;
+            final clampedDy = delta.dy.clamp(-10000.0, maxDy);
+            top += clampedDy;
+            newH = currentH - clampedDy;
+            break;
+        }
+
+        element.position = Offset(left, top);
+        element.scale = 1.0;
+        if (element is ImageElement) {
+          element.size = Size(newW, newH);
+        } else if (element is DocumentElement) {
+          element.size = Size(newW, newH);
+        }
+        element.invalidateBounds();
+      } else if (element is ShapeElement) {
+        Offset start = element.position;
+        Offset end = element.endPoint;
+
+        double left = min(start.dx, end.dx);
+        double right = max(start.dx, end.dx);
+        double top = min(start.dy, end.dy);
+        double bottom = max(start.dy, end.dy);
+
+        switch (direction) {
+          case HandleDirection.middleRight:
+            right += delta.dx;
+            break;
+          case HandleDirection.middleLeft:
+            left += delta.dx;
+            break;
+          case HandleDirection.bottomCenter:
+            bottom += delta.dy;
+            break;
+          case HandleDirection.topCenter:
+            top += delta.dy;
+            break;
+          case HandleDirection.bottomRight:
+            right += delta.dx;
+            bottom += delta.dy;
+            break;
+          case HandleDirection.bottomLeft:
+            left += delta.dx;
+            bottom += delta.dy;
+            break;
+          case HandleDirection.topRight:
+            right += delta.dx;
+            top += delta.dy;
+            break;
+          case HandleDirection.topLeft:
+            left += delta.dx;
+            top += delta.dy;
+            break;
+        }
+
+        element.position = Offset(left, top);
+        element.endPoint = Offset(right, bottom);
+        element.invalidateBounds();
+      }
+    }
+    _notify();
   }
 
   void updateElementTransform(Offset delta, double rotationDelta, double scaleDelta) {
@@ -362,8 +577,8 @@ class WhiteboardProvider extends ChangeNotifier {
       // 4. Individual scale property
       // Multiplicative scaling prevents distortion in groups
       element.scale = (element.scale * scaleFactor).clamp(0.1, 10.0);
-      
-      element.invalidateBounds(); 
+
+      element.invalidateBounds();
       element.invalidatePath(); // Sync the selection box and path during drag
     }
     _notify();
@@ -384,20 +599,12 @@ class WhiteboardProvider extends ChangeNotifier {
     final selected = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
 
     Rect bounds = selected[0].getRawBounds();
-    bounds = Rect.fromCenter(
-      center: bounds.center,
-      width: bounds.width * selected[0].scale,
-      height: bounds.height * selected[0].scale,
-    );
+    bounds = Rect.fromCenter(center: bounds.center, width: bounds.width * selected[0].scale, height: bounds.height * selected[0].scale);
 
     for (int i = 1; i < selected.length; i++) {
       final e = selected[i];
       final r = e.getRawBounds();
-      final visualR = Rect.fromCenter(
-        center: r.center,
-        width: r.width * e.scale,
-        height: r.height * e.scale,
-      );
+      final visualR = Rect.fromCenter(center: r.center, width: r.width * e.scale, height: r.height * e.scale);
       bounds = bounds.expandToInclude(visualR);
     }
     return bounds.center;
@@ -410,12 +617,23 @@ class WhiteboardProvider extends ChangeNotifier {
     for (var id in _selectedElementIds) {
       final e = currentPage.elements.firstWhere((el) => el.id == id);
       final start = _startTransforms[id]!;
-      transforms.add(TransformData(
-        id: id,
-        oldPos: start.oldPos, newPos: e.position,
-        oldRot: start.oldRot, newRot: e.rotation,
-        oldScale: start.oldScale, newScale: e.scale,
-      ));
+      Size? currentSize;
+      if (e is ImageElement) currentSize = e.size;
+      if (e is DocumentElement) currentSize = e.size;
+
+      transforms.add(
+        TransformData(
+          id: id,
+          oldPos: start.oldPos,
+          newPos: e.position,
+          oldRot: start.oldRot,
+          newRot: e.rotation,
+          oldScale: start.oldScale,
+          newScale: e.scale,
+          oldSize: start.oldSize,
+          newSize: currentSize,
+        ),
+      );
     }
 
     final command = MultiTransformCommand(pageIndex: _currentPageIndex, transforms: transforms);
@@ -435,6 +653,8 @@ class WhiteboardProvider extends ChangeNotifier {
     final Rect eraserRect = Rect.fromCircle(center: position, radius: radius);
 
     for (var element in List.from(currentPage.elements)) {
+      if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
+
       // Fast Spatial Filter: Bounding box check
       final rawBounds = element.getRawBounds();
       // Account for scale in visual bounds check
@@ -454,7 +674,14 @@ class WhiteboardProvider extends ChangeNotifier {
           toRemove.add(element);
           for (var seg in segments) {
             if (seg.length > 1) {
-              toAdd.add(element.copyWith(id: const Uuid().v4(), points: seg, position: seg.first));
+              toAdd.add(
+                element.copyWith(
+                  id: const Uuid().v4(),
+                  points: seg,
+                  position: seg.first,
+                  docPage: _isDocumentOverlayOpen ? _overlayCurrentPage : element.docPage,
+                ),
+              );
             }
           }
           changed = true;
@@ -501,7 +728,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
   List<List<Offset>> _splitStrokePoints(List<Offset> points, Offset eraserCenter, double radius) {
     if (points.isEmpty) return [];
-    
+
     List<List<Offset>> result = [];
     List<Offset>? currentSegment;
 
@@ -510,9 +737,8 @@ class WhiteboardProvider extends ChangeNotifier {
     for (int i = 0; i < points.length; i++) {
       final p = points[i];
       // Use distanceSquared to avoid sqrt
-      bool inside = (p.dx - eraserCenter.dx) * (p.dx - eraserCenter.dx) + 
-                   (p.dy - eraserCenter.dy) * (p.dy - eraserCenter.dy) < radiusSq;
-      
+      bool inside = (p.dx - eraserCenter.dx) * (p.dx - eraserCenter.dx) + (p.dy - eraserCenter.dy) * (p.dy - eraserCenter.dy) < radiusSq;
+
       if (inside) {
         if (currentSegment != null && currentSegment.isNotEmpty) {
           result.add(currentSegment);
@@ -523,7 +749,7 @@ class WhiteboardProvider extends ChangeNotifier {
         currentSegment.add(p);
       }
     }
-    
+
     if (currentSegment != null && currentSegment.isNotEmpty) {
       result.add(currentSegment);
     }
@@ -564,6 +790,25 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   // Page Management
+  void importPages(List<BoardPage> newPages) {
+    if (newPages.isEmpty) return;
+
+    if (_pages.length == 1 && _pages[0].elements.isEmpty) {
+      _pages.clear();
+      _pages.addAll(newPages);
+      _currentPageIndex = 0;
+    } else {
+      final startIndex = _pages.length;
+      _pages.addAll(newPages);
+      _currentPageIndex = startIndex;
+    }
+
+    _undoStack.clear();
+    _redoStack.clear();
+    clearSelection();
+    _notify();
+  }
+
   void addPage() {
     _pages.add(BoardPage(id: const Uuid().v4(), elements: []));
     _currentPageIndex = _pages.length - 1;
@@ -590,6 +835,7 @@ class WhiteboardProvider extends ChangeNotifier {
   // Hit Testing
   BoardElement? hitTest(Offset localPosition, {double threshold = 25.0}) {
     for (var element in currentPage.elements.reversed) {
+      if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
       if (element is StrokeElement) {
         for (var point in element.points) {
           if ((point - localPosition).distance < threshold) return element;

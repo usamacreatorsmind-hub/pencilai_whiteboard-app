@@ -3,9 +3,9 @@ import 'board_element.dart';
 
 class ImageElement extends BoardElement {
   final String imageUrl;
-  final Size size;
+  Size size;
 
-  ImageElement({required super.id, required super.position, required this.imageUrl, required this.size, super.rotation, super.scale});
+  ImageElement({required super.id, required super.position, required this.imageUrl, required this.size, super.rotation, super.scale, super.docPage});
 
   @override
   Map<String, dynamic> toJson() => {
@@ -14,6 +14,7 @@ class ImageElement extends BoardElement {
     'position': {'dx': position.dx, 'dy': position.dy},
     'rotation': rotation,
     'scale': scale,
+    'docPage': docPage,
     'imageUrl': imageUrl,
     'size': {'width': size.width, 'height': size.height},
   };
@@ -24,18 +25,20 @@ class ImageElement extends BoardElement {
       position: Offset(json['position']['dx'], json['position']['dy']),
       rotation: json['rotation']?.toDouble() ?? 0.0,
       scale: json['scale']?.toDouble() ?? 1.0,
+      docPage: json['docPage'],
       imageUrl: json['imageUrl'],
       size: Size(json['size']['width'], json['size']['height']),
     );
   }
 
   @override
-  ImageElement copyWith({String? id, Offset? position, double? rotation, double? scale, String? imageUrl, Size? size}) {
+  ImageElement copyWith({String? id, Offset? position, double? rotation, double? scale, int? docPage, String? imageUrl, Size? size}) {
     return ImageElement(
       id: id ?? this.id,
       position: position ?? this.position,
       rotation: rotation ?? this.rotation,
       scale: scale ?? this.scale,
+      docPage: docPage ?? this.docPage,
       imageUrl: imageUrl ?? this.imageUrl,
       size: size ?? this.size,
     );

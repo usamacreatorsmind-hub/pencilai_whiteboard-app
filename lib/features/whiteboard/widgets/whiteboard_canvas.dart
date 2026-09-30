@@ -81,6 +81,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     final id = const Uuid().v4();
+    final docPage = provider.isDocumentOverlayOpen ? provider.overlayCurrentPage : null;
     if (provider.currentTool == WhiteboardTool.pen) {
       _activeElements[pointerId] = StrokeElement(
         id: id,
@@ -89,6 +90,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         color: provider.currentColor,
         strokeWidth: provider.strokeWidth,
         penType: provider.currentPenType,
+        docPage: docPage,
       );
     } else if (provider.currentTool == WhiteboardTool.shape) {
       _activeElements[pointerId] = ShapeElement(
@@ -98,6 +100,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         endPoint: localPos,
         color: provider.currentColor,
         strokeWidth: provider.strokeWidth,
+        docPage: docPage,
       );
     } else if (provider.currentTool == WhiteboardTool.eraser) {
       _eraserPositions[pointerId] = localPos;
@@ -218,134 +221,153 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    return Selector<WhiteboardProvider, (int, Set<String>, Path?)>(
-      selector: (context, provider) => (provider.boardVersion, provider.selectedElementIds, provider.lassoPath),
+    return Selector<WhiteboardProvider, (int, Set<String>, Path?, WhiteboardTool, bool, int)>(
+      selector: (context, provider) => (
+      provider.boardVersion,
+      provider.selectedElementIds,
+      provider.lassoPath,
+      provider.currentTool,
+      provider.isDocumentOverlayOpen,
+      provider.overlayCurrentPage,
+      ),
       builder: (context, data, _) {
         final provider = context.read<WhiteboardProvider>();
         final elements = provider.currentPage.elements;
         final selectedIds = data.$2;
         final lassoPath = data.$3;
+        final currentTool = data.$4;
+        final isOverlayOpen = data.$5;
+        final overlayCurrentPage = data.$6;
 
-        return Listener(
-          onPointerDown: (e) => _onPointerDown(e, provider),
-          onPointerMove: (e) => _onPointerMove(e, provider),
-          onPointerUp: (e) => _onPointerUp(e, provider),
-          child: Stack(
-            children: [
-              RepaintBoundary(
-                child: CustomPaint(
-                  isComplex: true,
-                  willChange: false,
-                  foregroundPainter: WhiteboardPainter(
-                    elements: elements,
-                    activeElements: const [],
-                    lassoPath: null,
-                    selectedIds: selectedIds,
-                    version: data.$1,
-                  ),
-                  size: Size.infinite,
-                  child: Stack(
-                    children: [
-                      ...elements.whereType<ImageElement>().map((img) {
-                        final rawRect = img.getRawBounds();
-                        final visualRect = Rect.fromCenter(
-                          center: rawRect.center,
-                          width: rawRect.width * img.scale,
-                          height: rawRect.height * img.scale,
-                        );
-                        return Positioned(
-                          left: visualRect.left,
-                          top: visualRect.top,
-                          width: visualRect.width,
-                          height: visualRect.height,
-                          child: Transform.rotate(
-                            angle: img.rotation,
-                            child: img.imageUrl.startsWith('http')
-                                ? Image.network(
-                                    img.imageUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
-                                  )
-                                : Image.file(
-                                    File(img.imageUrl),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
-                                  ),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-              ValueListenableBuilder<int>(
-                valueListenable: _activeLayerPulse,
-                builder: (context, _, __) {
-                  return CustomPaint(
-                    isComplex: false,
-                    willChange: true,
-                    painter: WhiteboardPainter(
-                      elements: const [],
-                      activeElements: _activeElements.values.toList(),
-                      lassoPath: lassoPath ?? _currentLasso,
-                      selectedIds: const {},
+        final displayElements = isOverlayOpen
+            ? elements.where((e) => e.docPage == overlayCurrentPage).toList()
+            : elements.where((e) => e.docPage == null).toList();
+
+        final shouldIgnoreTouches = isOverlayOpen && currentTool == WhiteboardTool.select;
+
+        return IgnorePointer(
+          ignoring: shouldIgnoreTouches,
+          child: Listener(
+            onPointerDown: (e) => _onPointerDown(e, provider),
+            onPointerMove: (e) => _onPointerMove(e, provider),
+            onPointerUp: (e) => _onPointerUp(e, provider),
+            child: Stack(
+              children: [
+                RepaintBoundary(
+                  child: CustomPaint(
+                    isComplex: true,
+                    willChange: false,
+                    foregroundPainter: WhiteboardPainter(
+                      elements: displayElements,
+                      activeElements: const [],
+                      lassoPath: null,
+                      selectedIds: selectedIds,
+                      version: data.$1,
                     ),
                     size: Size.infinite,
-                  );
-                },
-              ),
-              ValueListenableBuilder<int>(
-                valueListenable: _activeLayerPulse,
-                builder: (context, _, __) {
-                  if (_eraserPositions.isEmpty) return const SizedBox.shrink();
-
-                  if (_isUsingGestureEraser) {
-                    Offset center = Offset.zero;
-                    for (var pos in _eraserPositions.values) {
-                      center += pos;
-                    }
-                    center /= _eraserPositions.length.toDouble();
-
-                    const double size = 80.0;
-                    return Positioned(
-                      left: center.dx - size / 2,
-                      top: center.dy - size / 2,
-                      child: Container(
-                        width: size,
-                        height: size,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: 0.4),
-                          border: Border.all(color: Colors.blue.withValues(alpha: 0.6), width: 2),
-                        ),
-                        child: const Icon(Icons.cleaning_services, color: Colors.blue, size: 55),
-                      ),
-                    );
-                  } else {
-                    return Stack(
-                      children: _eraserPositions.entries.map((entry) {
-                        final pos = entry.value;
-                        const double size = 50.0;
-                        return Positioned(
-                          left: pos.dx - size / 2,
-                          top: pos.dy - size / 2,
-                          child: Container(
-                            width: size,
-                            height: size,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withValues(alpha: 0.5),
-                              border: Border.all(color: Colors.blue, width: 2),
+                    child: Stack(
+                      children: [
+                        ...displayElements.whereType<ImageElement>().map((img) {
+                          final rawRect = img.getRawBounds();
+                          final visualRect = Rect.fromCenter(
+                            center: rawRect.center,
+                            width: rawRect.width * img.scale,
+                            height: rawRect.height * img.scale,
+                          );
+                          return Positioned(
+                            left: visualRect.left,
+                            top: visualRect.top,
+                            width: visualRect.width,
+                            height: visualRect.height,
+                            child: Transform.rotate(
+                              angle: img.rotation,
+                              child: img.imageUrl.startsWith('http')
+                                  ? Image.network(
+                                img.imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
+                              )
+                                  : Image.file(
+                                File(img.imageUrl),
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
+                              ),
                             ),
-                            child: const Icon(Icons.auto_fix_normal, color: Colors.blue, size: 30),
-                          ),
-                        );
-                      }).toList(),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+                ValueListenableBuilder<int>(
+                  valueListenable: _activeLayerPulse,
+                  builder: (context, _, __) {
+                    return CustomPaint(
+                      isComplex: false,
+                      willChange: true,
+                      painter: WhiteboardPainter(
+                        elements: const [],
+                        activeElements: _activeElements.values.toList(),
+                        lassoPath: lassoPath ?? _currentLasso,
+                        selectedIds: const {},
+                      ),
+                      size: Size.infinite,
                     );
-                  }
-                },
-              ),
-            ],
+                  },
+                ),
+                ValueListenableBuilder<int>(
+                  valueListenable: _activeLayerPulse,
+                  builder: (context, _, __) {
+                    if (_eraserPositions.isEmpty) return const SizedBox.shrink();
+
+                    if (_isUsingGestureEraser) {
+                      Offset center = Offset.zero;
+                      for (var pos in _eraserPositions.values) {
+                        center += pos;
+                      }
+                      center /= _eraserPositions.length.toDouble();
+
+                      const double size = 80.0;
+                      return Positioned(
+                        left: center.dx - size / 2,
+                        top: center.dy - size / 2,
+                        child: Container(
+                          width: size,
+                          height: size,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withValues(alpha: 0.4),
+                            border: Border.all(color: Colors.blue.withValues(alpha: 0.6), width: 2),
+                          ),
+                          child: const Icon(Icons.cleaning_services, color: Colors.blue, size: 55),
+                        ),
+                      );
+                    } else {
+                      return Stack(
+                        children: _eraserPositions.entries.map((entry) {
+                          final pos = entry.value;
+                          const double size = 50.0;
+                          return Positioned(
+                            left: pos.dx - size / 2,
+                            top: pos.dy - size / 2,
+                            child: Container(
+                              width: size,
+                              height: size,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.5),
+                                border: Border.all(color: Colors.blue, width: 2),
+                              ),
+                              child: const Icon(Icons.auto_fix_normal, color: Colors.blue, size: 30),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -445,7 +467,7 @@ class WhiteboardPainter extends CustomPainter {
         // Not selected - render based on penType with high fidelity
         switch (element.penType) {
           case PenType.pen:
-            // Standard crisp ballpoint pen
+          // Standard crisp ballpoint pen
             _strokePaint
               ..maskFilter = null
               ..strokeCap = StrokeCap.round
@@ -468,7 +490,7 @@ class WhiteboardPainter extends CustomPainter {
             break;
 
           case PenType.fountainPen:
-            // Dynamic calligraphic fountain pen: thickness varies naturally with stroke direction (thick downstrokes, thin upstrokes)
+          // Dynamic calligraphic fountain pen: thickness varies naturally with stroke direction (thick downstrokes, thin upstrokes)
             if (element.points.length == 1) {
               canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = element.color);
             } else if (element.points.length > 1) {
@@ -504,7 +526,7 @@ class WhiteboardPainter extends CustomPainter {
             break;
 
           case PenType.brush:
-            // Smooth organic tapered brush: clean single-stroke with fine tapered endpoints and lush middle
+          // Smooth organic tapered brush: clean single-stroke with fine tapered endpoints and lush middle
             if (element.points.length == 1) {
               final brushDot = Paint()
                 ..style = PaintingStyle.fill
@@ -539,7 +561,7 @@ class WhiteboardPainter extends CustomPainter {
             break;
 
           case PenType.marker:
-            // Semi-transparent highlighter / marker with round caps to avoid square ending blocks
+          // Semi-transparent highlighter / marker with round caps to avoid square ending blocks
             final markerWidth = element.strokeWidth * 1.4;
             _strokePaint
               ..maskFilter = null

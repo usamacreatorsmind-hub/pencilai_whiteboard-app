@@ -10,8 +10,15 @@ abstract class BoardElement {
   Offset position;
   double rotation;
   double scale;
+  int? docPage;
 
-  BoardElement({required this.id, required this.position, this.rotation = 0.0, this.scale = 1.0});
+  BoardElement({
+    required this.id,
+    required this.position,
+    this.rotation = 0.0,
+    this.scale = 1.0,
+    this.docPage,
+  });
 
   Rect? _cachedBounds;
 

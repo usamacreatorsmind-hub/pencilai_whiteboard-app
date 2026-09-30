@@ -18,6 +18,7 @@ class StrokeElement extends BoardElement {
     this.penType = PenType.pen,
     super.rotation,
     super.scale,
+    super.docPage,
   });
 
   Path? _cachedPath;
@@ -86,6 +87,7 @@ class StrokeElement extends BoardElement {
     'position': {'dx': position.dx, 'dy': position.dy},
     'rotation': rotation,
     'scale': scale,
+    'docPage': docPage,
     'points': points.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
     'color': color.value,
     'strokeWidth': strokeWidth,
@@ -98,6 +100,7 @@ class StrokeElement extends BoardElement {
       position: Offset(json['position']['dx'], json['position']['dy']),
       rotation: json['rotation']?.toDouble() ?? 0.0,
       scale: json['scale']?.toDouble() ?? 1.0,
+      docPage: json['docPage'],
       points: (json['points'] as List).map((p) => Offset(p['dx'], p['dy'])).toList(),
       color: Color(json['color']),
       strokeWidth: json['strokeWidth'].toDouble(),
@@ -114,6 +117,7 @@ class StrokeElement extends BoardElement {
     Offset? position,
     double? rotation,
     double? scale,
+    int? docPage,
     List<Offset>? points,
     Color? color,
     double? strokeWidth,
@@ -124,6 +128,7 @@ class StrokeElement extends BoardElement {
       position: position ?? this.position,
       rotation: rotation ?? this.rotation,
       scale: scale ?? this.scale,
+      docPage: docPage ?? this.docPage,
       points: points ?? this.points,
       color: color ?? this.color,
       strokeWidth: strokeWidth ?? this.strokeWidth,
