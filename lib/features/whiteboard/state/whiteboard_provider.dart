@@ -357,10 +357,8 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void clearCurrentPage() {
     if (currentPage.elements.isEmpty) return;
-    final drawingsToRemove = currentPage.elements.where((e) => e is StrokeElement || e is ShapeElement).toList();
-    if (drawingsToRemove.isEmpty) return;
-
-    final command = RemoveElementsCommand(drawingsToRemove, _currentPageIndex);
+    final toRemove = List<BoardElement>.from(currentPage.elements);
+    final command = ClearPageCommand(toRemove, _currentPageIndex);
     _executeCommand(command);
     clearSelection();
   }
