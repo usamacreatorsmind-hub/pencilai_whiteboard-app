@@ -33,8 +33,7 @@ class BoardStorageService {
 
   Future<String> exportToImage(GlobalKey boundaryKey) async {
     try {
-      RenderRepaintBoundary boundary =
-      boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      RenderRepaintBoundary boundary = boundaryKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
       ui.Image image = await boundary.toImage(pixelRatio: 3.0);
       ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       Uint8List pngBytes = byteData!.buffer.asUint8List();
@@ -51,6 +50,27 @@ class BoardStorageService {
     } catch (e) {
       debugPrint('Error exporting image: $e');
       rethrow;
+    }
+  }
+
+  Future<String?> captureCanvasToTempFile(GlobalKey boundaryKey) async {
+    try {
+      final context = boundaryKey.currentContext;
+      if (context == null) return null;
+      RenderRepaintBoundary boundary = context.findRenderObject() as RenderRepaintBoundary;
+      ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+      Uint8List pngBytes = byteData.buffer.asUint8List();
+
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/canvas_ai_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File(path);
+      await file.writeAsBytes(pngBytes);
+      return path;
+    } catch (e) {
+      debugPrint('Error capturing canvas for AI: $e');
+      return null;
     }
   }
 
@@ -105,6 +125,71 @@ class BoardStorageService {
     } catch (e) {
       debugPrint('Error exporting PDF: $e');
       rethrow;
+    }
+  }
+
+  Future<File> generateMultiPagePdfFile({
+    required GlobalKey boundaryKey,
+    required dynamic provider, // WhiteboardProvider instance
+  }) async {
+    final pdf = pw.Document();
+    final int originalPageIndex = provider.currentPageIndex;
+    final int pageCount = provider.pages.length;
+
+    try {
+      for (int i = 0; i < pageCount; i++) {
+        provider.switchPage(i);
+        await Future.delayed(const Duration(milliseconds: 180));
+
+        final boundaryContext = boundaryKey.currentContext;
+        RenderRepaintBoundary? renderObject;
+        if (boundaryContext != null) {
+          final ro = boundaryContext.findRenderObject();
+          if (ro is RenderRepaintBoundary) {
+            renderObject = ro;
+          }
+        }
+
+        if (renderObject != null) {
+          ui.Image image = await renderObject.toImage(pixelRatio: 2.0);
+          ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (byteData != null) {
+            Uint8List pngBytes = byteData.buffer.asUint8List();
+            final imagePdf = pw.MemoryImage(pngBytes);
+            pdf.addPage(
+              pw.Page(
+                pageFormat: PdfPageFormat.a4,
+                build: (pw.Context context) {
+                  return pw.Center(child: pw.Image(imagePdf));
+                },
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error compiling multi-page PDF: $e');
+    } finally {
+      provider.switchPage(originalPageIndex);
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final filePath = '${tempDir.path}/whiteboard_notes_${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final file = File(filePath);
+    await file.writeAsBytes(await pdf.save());
+    return file;
+  }
+
+  Future<String?> uploadPdfToFirebaseStorage(File pdfFile, String teacherId) async {
+    try {
+      final fileName = 'class_notes_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final ref = _storage.ref().child('class_notes').child(teacherId).child(fileName);
+      final uploadTask = await ref.putFile(pdfFile, SettableMetadata(contentType: 'application/pdf'));
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      return downloadUrl;
+    } catch (e) {
+      debugPrint('Error uploading PDF to Firebase Storage: $e');
+      return null;
     }
   }
 }

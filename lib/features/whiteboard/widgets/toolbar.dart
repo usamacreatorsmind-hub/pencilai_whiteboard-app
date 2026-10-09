@@ -14,6 +14,7 @@ import '../models/image_element.dart';
 import '../models/document_element.dart';
 import '../models/stroke_element.dart';
 import '../services/document_import_service.dart';
+import '../services/ppt_conversion_service.dart';
 
 class WhiteboardToolbar extends StatelessWidget {
   const WhiteboardToolbar({super.key});
@@ -239,9 +240,9 @@ class WhiteboardToolbar extends StatelessWidget {
                     trackHeight: 4,
                   ),
                   child: Slider(
-                    value: provider.strokeWidth,
-                    min: 1,
-                    max: 40,
+                    value: provider.strokeWidth.clamp(provider.minStrokeWidth, provider.maxStrokeWidth),
+                    min: provider.minStrokeWidth,
+                    max: provider.maxStrokeWidth,
                     onChanged: (value) {
                       provider.setStrokeWidth(value);
                       setDialogState(() {});
@@ -328,6 +329,161 @@ class WhiteboardToolbar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  static final GlobalKey _eraserButtonKey = GlobalKey();
+
+  void _showEraserSettings(BuildContext context, WhiteboardProvider provider) {
+    final RenderBox? renderBox = _eraserButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    Offset position = Offset.zero;
+    Size buttonSize = Size.zero;
+    if (renderBox != null) {
+      position = renderBox.localToGlobal(Offset.zero);
+      buttonSize = renderBox.size;
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'EraserSettings',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        const double dialogWidth = 200.0; // was 260
+        const double dialogHeight = 118.0; // was 180
+
+        double left = position.dx + (buttonSize.width / 2) - (dialogWidth / 2);
+        final screenSize = MediaQuery.of(context).size;
+        left = left.clamp(12.0, screenSize.width - dialogWidth - 12.0);
+        double top = position.dy - dialogHeight - 8.0;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: top,
+              child: Material(
+                color: Colors.transparent,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.8, end: 1.0),
+                  duration: const Duration(milliseconds: 150),
+                  builder: (context, scale, child) {
+                    return Transform.scale(scale: scale, alignment: Alignment.bottomCenter, child: child);
+                  },
+                  child: Container(
+                    width: dialogWidth,
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFCBD5E1), width: 1.0),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 12, spreadRadius: 1, offset: const Offset(0, 3)),
+                      ],
+                    ),
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) => Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Eraser Size',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E293B)),
+                              ),
+                              Text(
+                                '${provider.eraserSize.toInt()}px',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFF97316)),
+                              ),
+                            ],
+                          ),
+                          SizedBox(
+                            height: 28,
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: const Color(0xFFF97316),
+                                thumbColor: const Color(0xFFF97316),
+                                overlayColor: const Color(0xFFF97316).withValues(alpha: 0.2),
+                                trackHeight: 2.5,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                              ),
+                              child: Slider(
+                                value: provider.eraserSize,
+                                min: 10.0,
+                                max: 30.0,
+                                onChanged: (value) {
+                                  provider.setEraserSize(value);
+                                  setDialogState(() {});
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              // Compact realtime preview
+                              Container(
+                                height: 44,
+                                width: 64,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Container(
+                                  width: provider.eraserSize * 0.9,
+                                  height: provider.eraserSize * 0.9,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [Color(0xFFFFFFFF), Color(0xFFF1F5F9)],
+                                    ),
+                                    border: Border.all(color: const Color(0xFF94A3B8), width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 5, offset: const Offset(0, 2)),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      LucideIcons.eraser,
+                                      color: const Color(0xFF64748B),
+                                      size: (provider.eraserSize * 0.4).clamp(8.0, 16.0),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                                  minimumSize: const Size(44, 26),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Done',
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF97316), fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -431,19 +587,44 @@ class WhiteboardToolbar extends StatelessWidget {
   }
 
   Future<void> _pickImage(BuildContext context, WhiteboardProvider provider) async {
+    final screenSize = MediaQuery.of(context).size;
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
 
     if (image != null) {
-      provider.addElement(
-        ImageElement(id: const Uuid().v4(), position: const Offset(200, 200), imageUrl: image.path, size: const Size(400, 300)),
-      );
+      try {
+        final bytes = await File(image.path).readAsBytes();
+        final decodedImage = await decodeImageFromList(bytes);
+        double natWidth = decodedImage.width.toDouble();
+        double natHeight = decodedImage.height.toDouble();
+
+        double aspectRatio = natWidth > 0 && natHeight > 0 ? natWidth / natHeight : (screenSize.width / screenSize.height);
+
+        // Edge-to-Edge from top, left, and right
+        double width = screenSize.width;
+        double height = width / aspectRatio;
+
+        provider.addElement(ImageElement(id: const Uuid().v4(), position: Offset.zero, imageUrl: image.path, size: Size(width, height)));
+      } catch (e) {
+        provider.addElement(
+          ImageElement(
+            id: const Uuid().v4(),
+            position: Offset.zero,
+            imageUrl: image.path,
+            size: Size(screenSize.width, screenSize.height - 70),
+          ),
+        );
+      }
     }
   }
 
   Future<void> _pickDocument(BuildContext context, WhiteboardProvider provider) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final screenSize = MediaQuery.of(context).size;
+
+    // Pre-warm Cloud Run server concurrently to eliminate cold-start delay
+    PptConversionService.preWarmServer();
+
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -587,11 +768,19 @@ class WhiteboardToolbar extends StatelessWidget {
               onLongPress: () => _showPenSettings(context, provider),
             ),
             _ToolButton(
+              key: _eraserButtonKey,
               icon: LucideIcons.eraser,
               label: 'Eraser',
               isActive: provider.currentTool == WhiteboardTool.eraser,
               iconSize: iconSize,
-              onTap: () => provider.setTool(WhiteboardTool.eraser),
+              onTap: () {
+                if (provider.currentTool == WhiteboardTool.eraser) {
+                  _showEraserSettings(context, provider);
+                } else {
+                  provider.setTool(WhiteboardTool.eraser);
+                }
+              },
+              onLongPress: () => _showEraserSettings(context, provider),
             ),
             _ToolButton(
               icon: LucideIcons.trash2,
@@ -672,6 +861,7 @@ class _ToolButton extends StatelessWidget {
   final double iconSize;
 
   const _ToolButton({
+    super.key,
     required this.icon,
     required this.label,
     required this.isActive,

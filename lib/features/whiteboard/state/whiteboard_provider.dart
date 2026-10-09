@@ -7,6 +7,8 @@ import '../models/stroke_element.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
 import '../models/document_element.dart';
+import '../services/ai_service.dart';
+import '../services/board_storage_service.dart';
 
 enum WhiteboardTool { pen, eraser, shape, image, select }
 
@@ -48,16 +50,7 @@ class RemoveElementsCommand extends Command {
   }
 }
 
-enum HandleDirection {
-  topLeft,
-  topCenter,
-  topRight,
-  middleRight,
-  bottomRight,
-  bottomCenter,
-  bottomLeft,
-  middleLeft,
-}
+enum HandleDirection { topLeft, topCenter, topRight, middleRight, bottomRight, bottomCenter, bottomLeft, middleLeft }
 
 class MultiTransformCommand extends Command {
   final int pageIndex;
@@ -152,7 +145,8 @@ class WhiteboardProvider extends ChangeNotifier {
 
   WhiteboardTool _currentTool = WhiteboardTool.pen;
   Color _currentColor = Colors.black;
-  double _strokeWidth = 2.0;
+  final Map<PenType, double> _penStrokeWidths = {PenType.pen: 2.0, PenType.fountainPen: 2.0, PenType.brush: 2.0, PenType.marker: 2.0};
+  double _eraserSize = 25.0;
   PenType _currentPenType = PenType.pen;
   ShapeType _currentShapeType = ShapeType.rectangle;
 
@@ -169,7 +163,33 @@ class WhiteboardProvider extends ChangeNotifier {
   int get boardVersion => _boardVersion;
   WhiteboardTool get currentTool => _currentTool;
   Color get currentColor => _currentColor;
-  double get strokeWidth => _strokeWidth;
+  double get strokeWidth => _penStrokeWidths[_currentPenType] ?? 2.0;
+  double get eraserSize => _eraserSize;
+
+  double get minStrokeWidth {
+    switch (_currentPenType) {
+      case PenType.marker:
+        return 1.5;
+      case PenType.pen:
+      case PenType.fountainPen:
+      case PenType.brush:
+        return 1.0;
+    }
+  }
+
+  double get maxStrokeWidth {
+    switch (_currentPenType) {
+      case PenType.pen:
+        return 6.0;
+      case PenType.fountainPen:
+        return 6.0;
+      case PenType.brush:
+        return 8.0;
+      case PenType.marker:
+        return 10.0;
+    }
+  }
+
   PenType get currentPenType => _currentPenType;
   ShapeType get currentShapeType => _currentShapeType;
   Set<String> get selectedElementIds => _selectedElementIds;
@@ -282,12 +302,18 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void setStrokeWidth(double width) {
-    _strokeWidth = width;
+    _penStrokeWidths[_currentPenType] = width.clamp(minStrokeWidth, maxStrokeWidth);
+    _notify();
+  }
+
+  void setEraserSize(double size) {
+    _eraserSize = size.clamp(10.0, 30.0);
     _notify();
   }
 
   void setPenType(PenType type) {
     _currentPenType = type;
+    _currentTool = WhiteboardTool.pen;
     _notify();
   }
 
@@ -642,20 +668,21 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   // ... Partial Erase and Hit Testing ...
-  void partialErase(Offset position, double radius) {
+  void partialErase(Offset position, double radius, {Offset? lastPos}) {
     List<BoardElement> toRemove = [];
     List<BoardElement> toAdd = [];
     bool changed = false;
 
-    // Create eraser bounding box once
-    final Rect eraserRect = Rect.fromCircle(center: position, radius: radius);
+    final Offset p1 = lastPos ?? position;
+    final Offset p2 = position;
+
+    final Rect eraserBox = Rect.fromPoints(p1, p2).inflate(radius);
 
     for (var element in List.from(currentPage.elements)) {
       if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
 
       // Fast Spatial Filter: Bounding box check
       final rawBounds = element.getRawBounds();
-      // Account for scale in visual bounds check
       final visualBounds = Rect.fromCenter(
         center: rawBounds.center,
         width: rawBounds.width * element.scale,
@@ -663,10 +690,10 @@ class WhiteboardProvider extends ChangeNotifier {
       );
 
       // If eraser area doesn't even touch the element's box, skip it
-      if (!eraserRect.overlaps(visualBounds.inflate(radius))) continue;
+      if (!eraserBox.overlaps(visualBounds)) continue;
 
       if (element is StrokeElement) {
-        List<List<Offset>> segments = _splitStrokePoints(element.points, position, radius);
+        List<List<Offset>> segments = _splitStrokePointsSegment(element.points, p1, p2, radius);
 
         if (segments.length != 1 || segments[0].length != element.points.length) {
           toRemove.add(element);
@@ -686,10 +713,11 @@ class WhiteboardProvider extends ChangeNotifier {
         }
       } else if (element is ShapeElement) {
         if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
-          if (_distToSegment(position, element.position, element.endPoint) < radius) {
+          if (_distToSegment(position, element.position, element.endPoint) < radius ||
+              _distToSegment(p1, element.position, element.endPoint) < radius) {
             toRemove.add(element);
             List<Offset> linePoints = _interpolatePoints(element.position, element.endPoint);
-            List<List<Offset>> segments = _splitStrokePoints(linePoints, position, radius);
+            List<List<Offset>> segments = _splitStrokePointsSegment(linePoints, p1, p2, radius);
             for (var seg in segments) {
               if (seg.length > 1) {
                 toAdd.add(
@@ -707,7 +735,7 @@ class WhiteboardProvider extends ChangeNotifier {
           }
         } else {
           final rect = Rect.fromPoints(element.position, element.endPoint);
-          if (rect.inflate(radius).contains(position)) {
+          if (rect.inflate(radius).contains(position) || rect.inflate(radius).contains(p1)) {
             toRemove.add(element);
             changed = true;
           }
@@ -724,7 +752,7 @@ class WhiteboardProvider extends ChangeNotifier {
     }
   }
 
-  List<List<Offset>> _splitStrokePoints(List<Offset> points, Offset eraserCenter, double radius) {
+  List<List<Offset>> _splitStrokePointsSegment(List<Offset> points, Offset segA, Offset segB, double radius) {
     if (points.isEmpty) return [];
 
     List<List<Offset>> result = [];
@@ -734,8 +762,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
     for (int i = 0; i < points.length; i++) {
       final p = points[i];
-      // Use distanceSquared to avoid sqrt
-      bool inside = (p.dx - eraserCenter.dx) * (p.dx - eraserCenter.dx) + (p.dy - eraserCenter.dy) * (p.dy - eraserCenter.dy) < radiusSq;
+      bool inside = _distToSegmentSquared(p, segA, segB) < radiusSq;
 
       if (inside) {
         if (currentSegment != null && currentSegment.isNotEmpty) {
@@ -752,6 +779,15 @@ class WhiteboardProvider extends ChangeNotifier {
       result.add(currentSegment);
     }
     return result;
+  }
+
+  double _distToSegmentSquared(Offset p, Offset v, Offset w) {
+    double l2 = (v - w).distanceSquared;
+    if (l2 == 0.0) return (p - v).distanceSquared;
+    double t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
+    t = t.clamp(0.0, 1.0);
+    final proj = Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy));
+    return (p - proj).distanceSquared;
   }
 
   List<Offset> _interpolatePoints(Offset start, Offset end) {
@@ -861,5 +897,139 @@ class WhiteboardProvider extends ChangeNotifier {
     double t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
     t = t.clamp(0.0, 1.0);
     return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy))).distance;
+  }
+
+  final Map<String, Size> _defaultImageSizes = {};
+  final Set<String> _fullScreenImages = {};
+
+  void toggleImageFullScreen(String elementId, Size screenSize) {
+    for (var page in _pages) {
+      for (var element in page.elements) {
+        if (element.id == elementId && element is ImageElement) {
+          if (!_defaultImageSizes.containsKey(elementId)) {
+            _defaultImageSizes[elementId] = element.size;
+          }
+
+          bool isFull = _fullScreenImages.contains(elementId);
+          if (!isFull) {
+            final natW = element.size.width;
+            final natH = element.size.height;
+            final aspect = natW > 0 && natH > 0 ? natW / natH : 1.33;
+
+            double targetW = screenSize.width * 0.90;
+            double targetH = screenSize.height * 0.90;
+            double newW, newH;
+
+            if (targetW / targetH > aspect) {
+              newH = targetH;
+              newW = newH * aspect;
+            } else {
+              newW = targetW;
+              newH = newW / aspect;
+            }
+
+            element.size = Size(newW, newH);
+            element.position = Offset((screenSize.width - newW) / 2, (screenSize.height - newH) / 2);
+            _fullScreenImages.add(elementId);
+          } else {
+            final defSize = _defaultImageSizes[elementId];
+            if (defSize != null) {
+              element.size = defSize;
+              element.position = Offset((screenSize.width - defSize.width) / 2, (screenSize.height - defSize.height) / 2);
+            }
+            _fullScreenImages.remove(elementId);
+          }
+          element.invalidateBounds();
+          _notify();
+          return;
+        }
+      }
+    }
+  }
+
+  // --- AI FEATURES ---
+  final AiService _aiService = AiService();
+  GlobalKey? canvasKey;
+  bool _isAiPanelOpen = false;
+  bool _isAiLoading = false;
+  String _aiResultText = '';
+  String _aiTitle = '';
+
+  bool get isAiPanelOpen => _isAiPanelOpen;
+  bool get isAiLoading => _isAiLoading;
+  String get aiResultText => _aiResultText;
+  String get aiTitle => _aiTitle;
+
+  void toggleAiPanel(bool open) {
+    _isAiPanelOpen = open;
+    _notify();
+  }
+
+  Future<void> generateAiContent({required String type, required bool isWholeDoc}) async {
+    _isAiPanelOpen = true;
+    _isAiLoading = true;
+    _aiTitle = type;
+    _aiResultText = '';
+    _notify();
+
+    StringBuffer contentBuffer = StringBuffer();
+    List<String> imagePaths = [];
+
+    if (isWholeDoc) {
+      for (int i = 0; i < _pages.length; i++) {
+        contentBuffer.writeln('--- Slide ${i + 1} ---');
+        for (var el in _pages[i].elements) {
+          if (el is ImageElement && el.imageUrl.isNotEmpty) {
+            imagePaths.add(el.imageUrl);
+          } else if (el is DocumentElement) {
+            contentBuffer.writeln(el.fileName);
+          }
+        }
+      }
+    } else {
+      contentBuffer.writeln('--- Slide ${_currentPageIndex + 1} ---');
+      for (var el in currentPage.elements) {
+        if (el is ImageElement && el.imageUrl.isNotEmpty) {
+          imagePaths.add(el.imageUrl);
+        } else if (el is DocumentElement) {
+          contentBuffer.writeln(el.fileName);
+        }
+      }
+    }
+
+    String contentText = contentBuffer.toString().trim();
+    
+    // If no slide images or documents were found, but canvasKey is available, capture the current canvas (freehand writing/drawings)!
+    if (imagePaths.isEmpty && canvasKey != null) {
+      final canvasImagePath = await BoardStorageService().captureCanvasToTempFile(canvasKey!);
+      if (canvasImagePath != null) {
+        imagePaths.add(canvasImagePath);
+        contentBuffer.writeln('Handwritten notes / drawings on whiteboard canvas.');
+      }
+    }
+
+    if (contentText.isEmpty && imagePaths.isEmpty) {
+      contentText = isWholeDoc
+          ? 'Educational presentation with ${_pages.length} slides.'
+          : 'Educational teaching slide ${_currentPageIndex + 1}.';
+    }
+
+    // Limit to max 5 slide images per prompt to avoid payload limit
+    if (imagePaths.length > 5) {
+      imagePaths = imagePaths.sublist(0, 5);
+    }
+
+    String result = '';
+    if (type == 'Quick Quiz') {
+      result = await _aiService.generateQuickQuiz(contentText, imagePaths: imagePaths);
+    } else if (type == 'Homework') {
+      result = await _aiService.generateHomework(contentText, imagePaths: imagePaths);
+    } else if (type == 'Summary') {
+      result = await _aiService.generateSummary(contentText, imagePaths: imagePaths);
+    }
+
+    _aiResultText = result;
+    _isAiLoading = false;
+    _notify();
   }
 }

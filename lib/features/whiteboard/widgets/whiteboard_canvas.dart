@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:math';
-import 'dart:ui';
+import 'dart:ui' as ui;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../state/whiteboard_provider.dart';
@@ -10,6 +12,7 @@ import '../models/stroke_element.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
 import '../models/document_element.dart';
+import '../../../widgets/pptx_viewer.dart';
 
 class WhiteboardCanvas extends StatefulWidget {
   const WhiteboardCanvas({super.key});
@@ -21,6 +24,9 @@ class WhiteboardCanvas extends StatefulWidget {
 class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final Map<int, BoardElement> _activeElements = {};
   final Map<int, Offset> _eraserPositions = {};
+  final Map<int, Offset> _lastEraserPositions = {};
+  final Map<int, Offset> _smoothedDeltas = {};
+  final Map<int, Offset> _tipOffsets = {};
   final Map<int, PointerEvent> _pointers = {};
   Path? _currentLasso;
   bool _isUsingGestureEraser = false;
@@ -30,7 +36,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   @override
   void dispose() {
-    _activeLayerPulse.dispose();
+    _activeLayerPulse.dispose(); // 985114736364
     super.dispose();
   }
 
@@ -40,9 +46,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
     final double major = event.radiusMajor;
     final double minor = event.radiusMinor;
-    final bool veryLargeContact = major > 15 || event.size > 0.013;
+    final bool veryLargeContact = major > 18 || event.size > 0.015;
     final double ratio = minor > 0 ? major / minor : 1.0;
-    final bool isWideAndRound = major > 12 && ratio < 1.25;
+    final bool isWideAndRound = major > 15 && ratio < 1.15;
     return veryLargeContact || isWideAndRound;
   }
 
@@ -59,6 +65,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _pointers[event.pointer] = event;
     final localPos = event.localPosition;
     final pointerId = event.pointer;
+    _smoothedDeltas[pointerId] = Offset.zero;
+    _tipOffsets[pointerId] = Offset.zero;
 
     if (_isEraserMode(event)) {
       _isUsingGestureEraser = true;
@@ -104,13 +112,18 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       );
     } else if (provider.currentTool == WhiteboardTool.eraser) {
       _eraserPositions[pointerId] = localPos;
-      provider.partialErase(localPos, 25.0);
+      _lastEraserPositions[pointerId] = localPos;
+      provider.partialErase(localPos, provider.eraserSize, lastPos: localPos);
     }
     _activeLayerPulse.value++;
   }
 
   void _onPointerMove(PointerMoveEvent event, WhiteboardProvider provider) {
     _pointers[event.pointer] = event;
+    _processSinglePointerMove(event, provider);
+  }
+
+  void _processSinglePointerMove(PointerMoveEvent event, WhiteboardProvider provider) {
     final pointerId = event.pointer;
     final localPos = event.localPosition;
 
@@ -120,10 +133,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _switchToEraserMode(provider);
         return;
       }
+      final lastPos = _lastEraserPositions[pointerId] ?? localPos;
       _eraserPositions[pointerId] = localPos;
+      _lastEraserPositions[pointerId] = localPos;
       final now = DateTime.now();
-      if (now.difference(_lastGestureEraseTime).inMilliseconds > 32) {
-        provider.partialErase(localPos, 50.0);
+      if (now.difference(_lastGestureEraseTime).inMilliseconds > 16) {
+        provider.partialErase(localPos, (provider.eraserSize * 1.6).clamp(35.0, 90.0), lastPos: lastPos);
         _lastGestureEraseTime = now;
       }
       _activeLayerPulse.value++;
@@ -138,8 +153,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     if (provider.currentTool == WhiteboardTool.eraser || _eraserPositions.containsKey(pointerId)) {
+      final lastPos = _lastEraserPositions[pointerId] ?? localPos;
       _eraserPositions[pointerId] = localPos;
-      provider.partialErase(localPos, 25.0);
+      _lastEraserPositions[pointerId] = localPos;
+      provider.partialErase(localPos, provider.eraserSize, lastPos: lastPos);
       _activeLayerPulse.value++;
       return;
     }
@@ -148,34 +165,29 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (active == null) return;
 
     if (active is StrokeElement) {
-      active.addPoint(localPos);
-
-      final delta = event.delta;
-      final speed = delta.distance;
-
-      if (speed > 0.5) {
-        // Conservative adaptive factor — never exceeds 1x the frame delta,
-        // so prediction can never visibly overshoot or stretch.
-        final adaptiveFactor = (speed / 15.0).clamp(0.2, 0.9);
-        active.predictedTip = localPos + delta * adaptiveFactor;
-      } else {
-        active.predictedTip = null;
+      if (active.addPoint(localPos)) {
+        active.predictedTip = null; // Removed prediction for maximum raw pen speed & direct touch tracking
+        _activeLayerPulse.value++;
       }
     } else if (active is ShapeElement) {
       _activeElements[pointerId] = active.copyWith(endPoint: localPos)..invalidateBounds();
+      _activeLayerPulse.value++;
     }
-    _activeLayerPulse.value++;
   }
 
   void _onPointerUp(PointerUpEvent event, WhiteboardProvider provider) {
     final pointerId = event.pointer;
 
     if (_isUsingGestureEraser && _eraserPositions.containsKey(pointerId)) {
-      provider.partialErase(event.localPosition, 50.0);
+      final lastPos = _lastEraserPositions[pointerId] ?? event.localPosition;
+      provider.partialErase(event.localPosition, (provider.eraserSize * 1.6).clamp(35.0, 90.0), lastPos: lastPos);
     }
 
     _pointers.remove(pointerId);
     _eraserPositions.remove(pointerId);
+    _lastEraserPositions.remove(pointerId);
+    _smoothedDeltas.remove(pointerId);
+    _tipOffsets.remove(pointerId);
 
     if (_pointers.isEmpty) {
       _isUsingGestureEraser = false;
@@ -195,13 +207,32 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final element = _activeElements.remove(pointerId);
     if (element != null) {
       if (element is StrokeElement && element.points.length > 1) {
-        element.predictedTip = null;
+        element.invalidatePath(); // Full rebuild with final lineTo & predictedTip = null
         provider.addElement(element);
+        WhiteboardPainter.appendElementToCache(element, provider.boardVersion);
       } else if (element is ShapeElement) {
         if ((element.position - element.endPoint).distance > 5) {
           provider.addElement(element);
+          WhiteboardPainter.appendElementToCache(element, provider.boardVersion);
         }
       }
+    }
+    _activeLayerPulse.value++;
+  }
+
+  void _onPointerCancel(PointerCancelEvent event, WhiteboardProvider provider) {
+    final pointerId = event.pointer;
+    _pointers.remove(pointerId);
+    _eraserPositions.remove(pointerId);
+    _lastEraserPositions.remove(pointerId);
+    _smoothedDeltas.remove(pointerId);
+    _tipOffsets.remove(pointerId);
+    final element = _activeElements.remove(pointerId);
+    if (element is StrokeElement) {
+      element.disposeLive();
+    }
+    if (_pointers.isEmpty) {
+      _isUsingGestureEraser = false;
     }
     _activeLayerPulse.value++;
   }
@@ -214,7 +245,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final event = entry.value;
       final pos = event.localPosition;
       _eraserPositions[id] = pos;
-      provider.partialErase(pos, 50.0);
+      _lastEraserPositions[id] = pos;
+      provider.partialErase(pos, (provider.eraserSize * 1.6).clamp(35.0, 90.0), lastPos: pos);
     }
     _activeLayerPulse.value++;
   }
@@ -223,12 +255,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   Widget build(BuildContext context) {
     return Selector<WhiteboardProvider, (int, Set<String>, Path?, WhiteboardTool, bool, int)>(
       selector: (context, provider) => (
-      provider.boardVersion,
-      provider.selectedElementIds,
-      provider.lassoPath,
-      provider.currentTool,
-      provider.isDocumentOverlayOpen,
-      provider.overlayCurrentPage,
+        provider.boardVersion,
+        provider.selectedElementIds,
+        provider.lassoPath,
+        provider.currentTool,
+        provider.isDocumentOverlayOpen,
+        provider.overlayCurrentPage,
       ),
       builder: (context, data, _) {
         final provider = context.read<WhiteboardProvider>();
@@ -251,6 +283,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             onPointerDown: (e) => _onPointerDown(e, provider),
             onPointerMove: (e) => _onPointerMove(e, provider),
             onPointerUp: (e) => _onPointerUp(e, provider),
+            onPointerCancel: (e) => _onPointerCancel(e, provider),
             child: Stack(
               children: [
                 RepaintBoundary(
@@ -281,17 +314,88 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                             height: visualRect.height,
                             child: Transform.rotate(
                               angle: img.rotation,
-                              child: img.imageUrl.startsWith('http')
-                                  ? Image.network(
-                                img.imageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
-                              )
-                                  : Image.file(
-                                File(img.imageUrl),
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.25),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: img.imageUrl.startsWith('http')
+                                      ? Image.network(
+                                          img.imageUrl,
+                                          fit: BoxFit.contain,
+                                          filterQuality: FilterQuality.high,
+                                          errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
+                                        )
+                                      : Image.file(
+                                          File(img.imageUrl),
+                                          fit: BoxFit.contain,
+                                          filterQuality: FilterQuality.high,
+                                          errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
+                                        ),
+                                ),
                               ),
+                            ),
+                          );
+                        }),
+                        ...displayElements.whereType<DocumentElement>().map((doc) {
+                          final rawRect = doc.getRawBounds();
+                          final visualRect = Rect.fromCenter(
+                            center: rawRect.center,
+                            width: rawRect.width * doc.scale,
+                            height: rawRect.height * doc.scale,
+                          );
+
+                          final lowerPath = doc.filePath.toLowerCase();
+                          final lowerName = doc.fileName.toLowerCase();
+                          final isPptx =
+                              lowerPath.endsWith('.pptx') ||
+                              lowerName.endsWith('.pptx') ||
+                              lowerPath.endsWith('.ppt') ||
+                              lowerName.endsWith('.ppt');
+
+                          Widget content;
+                          if (isPptx) {
+                            content = PptxViewer(file: File(doc.filePath), size: visualRect.size, slideIndex: doc.docPage ?? 0);
+                          } else {
+                            content = Container(
+                              color: Colors.white,
+                              padding: const EdgeInsets.all(12),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.description, size: 48, color: Colors.blueAccent),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      doc.fileName,
+                                      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          return Positioned(
+                            left: visualRect.left,
+                            top: visualRect.top,
+                            width: visualRect.width,
+                            height: visualRect.height,
+                            child: Transform.rotate(
+                              angle: doc.rotation,
+                              child: ClipRRect(borderRadius: BorderRadius.circular(4), child: content),
                             ),
                           );
                         }),
@@ -319,6 +423,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                   valueListenable: _activeLayerPulse,
                   builder: (context, _, __) {
                     if (_eraserPositions.isEmpty) return const SizedBox.shrink();
+                    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
 
                     if (_isUsingGestureEraser) {
                       Offset center = Offset.zero;
@@ -327,38 +432,70 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                       }
                       center /= _eraserPositions.length.toDouble();
 
-                      const double size = 80.0;
+                      final double gestureRadius = (provider.eraserSize * 1.6).clamp(35.0, 90.0);
+                      final double diameter = gestureRadius * 2.0;
                       return Positioned(
-                        left: center.dx - size / 2,
-                        top: center.dy - size / 2,
+                        left: center.dx - gestureRadius,
+                        top: center.dy - gestureRadius,
                         child: Container(
-                          width: size,
-                          height: size,
+                          width: diameter,
+                          height: diameter,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.white.withValues(alpha: 0.4),
-                            border: Border.all(color: Colors.blue.withValues(alpha: 0.6), width: 2),
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [Color(0xFFFFFFFF), Color(0xFFF1F5F9)],
+                            ),
+                            border: Border.all(color: const Color(0xFF94A3B8), width: 2.2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.22),
+                                blurRadius: 12,
+                                spreadRadius: 1,
+                                offset: const Offset(0, 4),
+                              ),
+                              BoxShadow(color: const Color(0xFF94A3B8).withValues(alpha: 0.20), blurRadius: 8, spreadRadius: 1),
+                            ],
                           ),
-                          child: const Icon(Icons.cleaning_services, color: Colors.blue, size: 55),
+                          child: Center(
+                            child: Icon(LucideIcons.eraser, color: const Color(0xFF64748B), size: (diameter * 0.45).clamp(24.0, 48.0)),
+                          ),
                         ),
                       );
                     } else {
                       return Stack(
                         children: _eraserPositions.entries.map((entry) {
                           final pos = entry.value;
-                          const double size = 50.0;
+                          final double radius = provider.eraserSize;
+                          final double diameter = radius * 2.0;
                           return Positioned(
-                            left: pos.dx - size / 2,
-                            top: pos.dy - size / 2,
+                            left: pos.dx - radius,
+                            top: pos.dy - radius,
                             child: Container(
-                              width: size,
-                              height: size,
+                              width: diameter,
+                              height: diameter,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white.withValues(alpha: 0.5),
-                                border: Border.all(color: Colors.blue, width: 2),
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [Color(0xFFFFFFFF), Color(0xFFF1F5F9)],
+                                ),
+                                border: Border.all(color: const Color(0xFF94A3B8), width: 1.8),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.20),
+                                    blurRadius: 10,
+                                    spreadRadius: 1,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                  BoxShadow(color: const Color(0xFF94A3B8).withValues(alpha: 0.15), blurRadius: 6, spreadRadius: 1),
+                                ],
                               ),
-                              child: const Icon(Icons.auto_fix_normal, color: Colors.blue, size: 30),
+                              child: Center(
+                                child: Icon(LucideIcons.eraser, color: const Color(0xFF64748B), size: (diameter * 0.42).clamp(12.0, 32.0)),
+                              ),
                             ),
                           );
                         }).toList(),
@@ -382,6 +519,12 @@ class WhiteboardPainter extends CustomPainter {
   final Set<String> selectedIds;
   final int version;
 
+  static ui.Picture? _cachedElementsPicture;
+  static int _cachedVersion = -1;
+  static int _cachedElementCount = -1;
+  static Size _cachedSize = Size.zero;
+  static Set<String> _cachedSelectedIds = const {};
+
   final Paint _strokePaint = Paint()
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round
@@ -395,11 +538,55 @@ class WhiteboardPainter extends CustomPainter {
 
   WhiteboardPainter({required this.elements, required this.activeElements, this.lassoPath, required this.selectedIds, this.version = 0});
 
+  static void appendElementToCache(BoardElement newElement, int version) {
+    if (_cachedElementsPicture != null && _cachedSize != Size.zero) {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, _cachedSize.width, _cachedSize.height));
+
+      canvas.drawPicture(_cachedElementsPicture!);
+
+      final painter = WhiteboardPainter(elements: const [], activeElements: const [], selectedIds: const {}, version: version);
+      painter._drawElement(canvas, newElement);
+
+      _cachedElementsPicture?.dispose();
+      _cachedElementsPicture = recorder.endRecording();
+      _cachedElementCount++;
+      _cachedVersion = version;
+    }
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    for (var element in elements) {
-      _drawElement(canvas, element);
+    if (elements.isNotEmpty) {
+      final bool isCacheValid =
+          _cachedElementsPicture != null &&
+          _cachedVersion == version &&
+          _cachedElementCount == elements.length &&
+          _cachedSize == size &&
+          _cachedSelectedIds.length == selectedIds.length &&
+          _cachedSelectedIds.containsAll(selectedIds);
+
+      if (isCacheValid) {
+        canvas.drawPicture(_cachedElementsPicture!);
+      } else {
+        final recorder = ui.PictureRecorder();
+        final recorderCanvas = Canvas(recorder, Rect.fromLTWH(0, 0, size.width, size.height));
+
+        for (var element in elements) {
+          _drawElement(recorderCanvas, element);
+        }
+
+        _cachedElementsPicture?.dispose();
+        _cachedElementsPicture = recorder.endRecording();
+        _cachedVersion = version;
+        _cachedElementCount = elements.length;
+        _cachedSize = size;
+        _cachedSelectedIds = Set.from(selectedIds);
+
+        canvas.drawPicture(_cachedElementsPicture!);
+      }
     }
+
     for (var element in activeElements) {
       _drawElement(canvas, element, isActive: true);
     }
@@ -467,7 +654,7 @@ class WhiteboardPainter extends CustomPainter {
         // Not selected - render based on penType with high fidelity
         switch (element.penType) {
           case PenType.pen:
-          // Standard crisp ballpoint pen
+            // Standard crisp ballpoint pen
             _strokePaint
               ..maskFilter = null
               ..strokeCap = StrokeCap.round
@@ -479,10 +666,7 @@ class WhiteboardPainter extends CustomPainter {
               canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = element.color);
             } else if (element.points.length > 1) {
               canvas.drawPath(element.path, _strokePaint);
-              final p1 = element.points[element.points.length - 2];
-              final p2 = element.points[element.points.length - 1];
-              final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-              canvas.drawLine(mid, p2, _strokePaint);
+              final p2 = element.points.last;
               if (isActive && element.predictedTip != null) {
                 canvas.drawLine(p2, element.predictedTip!, _strokePaint);
               }
@@ -490,7 +674,7 @@ class WhiteboardPainter extends CustomPainter {
             break;
 
           case PenType.fountainPen:
-          // Dynamic calligraphic fountain pen: thickness varies naturally with stroke direction (thick downstrokes, thin upstrokes)
+            // Ultra-smooth Calligraphic Fountain Pen with fixed nib angle and Bezier smoothing
             if (element.points.length == 1) {
               canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = element.color);
             } else if (element.points.length > 1) {
@@ -500,33 +684,43 @@ class WhiteboardPainter extends CustomPainter {
                 ..strokeJoin = StrokeJoin.round
                 ..color = element.color;
 
-              for (var i = 0; i < element.points.length - 1; i++) {
-                final p1 = element.points[i];
-                final p2 = element.points[i + 1];
-                final dx = p2.dx - p1.dx;
-                final dy = p2.dy - p1.dy;
-                final length = sqrt(dx * dx + dy * dy);
+              final points = element.points;
+              final n = points.length;
+              final List<double> smoothedWidths = element.cachedWidths;
 
-                double factor = 1.0;
-                if (length > 0) {
-                  final sinTheta = dy / length; // positive on downstrokes, negative on upstrokes
-                  factor = 0.5 + (sinTheta * 1.5).clamp(-0.4, 1.8);
+              if (n == 2) {
+                calligraphyPaint.strokeWidth = (smoothedWidths[0] + smoothedWidths[1]) / 2;
+                final tip = (isActive && element.predictedTip != null) ? element.predictedTip! : points[1];
+                canvas.drawLine(points[0], tip, calligraphyPaint);
+              } else {
+                for (var i = 0; i < n - 1; i++) {
+                  final pA = points[i];
+                  final pB = points[i + 1];
+                  final m1 = i == 0 ? pA : Offset((pA.dx + pB.dx) / 2, (pA.dy + pB.dy) / 2);
+                  final m2 = (i == n - 2 && !isActive)
+                      ? pB
+                      : Offset((pB.dx + points[min(i + 2, n - 1)].dx) / 2, (pB.dy + points[min(i + 2, n - 1)].dy) / 2);
+
+                  final segmentPath = Path()
+                    ..moveTo(m1.dx, m1.dy)
+                    ..quadraticBezierTo(pB.dx, pB.dy, m2.dx, m2.dy);
+
+                  calligraphyPaint.strokeWidth = (smoothedWidths[i] + smoothedWidths[i + 1]) / 2;
+                  canvas.drawPath(segmentPath, calligraphyPaint);
                 }
-
-                calligraphyPaint.strokeWidth = (element.strokeWidth * factor).clamp(1.0, element.strokeWidth * 2.8);
-                canvas.drawLine(p1, p2, calligraphyPaint);
               }
 
-              if (isActive && element.predictedTip != null && element.points.isNotEmpty) {
-                final lastP = element.points.last;
-                calligraphyPaint.strokeWidth = element.strokeWidth;
-                canvas.drawLine(lastP, element.predictedTip!, calligraphyPaint);
+              if (isActive && points.length >= 2) {
+                final lastP = points.last;
+                final tip = element.predictedTip ?? lastP;
+                calligraphyPaint.strokeWidth = smoothedWidths.last;
+                canvas.drawLine(lastP, tip, calligraphyPaint);
               }
             }
             break;
 
           case PenType.brush:
-          // Smooth organic tapered brush: clean single-stroke with fine tapered endpoints and lush middle
+            // Smooth organic tapered brush with stable live taper
             if (element.points.length == 1) {
               final brushDot = Paint()
                 ..style = PaintingStyle.fill
@@ -540,47 +734,53 @@ class WhiteboardPainter extends CustomPainter {
                 ..color = element.color;
 
               final totalPoints = element.points.length;
+              const int taperCount = 5;
+
               for (var i = 0; i < totalPoints - 1; i++) {
                 final p1 = element.points[i];
                 final p2 = element.points[i + 1];
 
-                final progress = i / totalPoints;
-                final taper = sin(progress * pi); // 0 at start/end, 1 at center
-                final dynamicWidth = element.strokeWidth * (0.3 + taper * 0.9);
+                double taper = 1.0;
+                if (i < taperCount) {
+                  taper = (i + 1) / taperCount;
+                } else if (!isActive && i >= totalPoints - taperCount) {
+                  taper = (totalPoints - i) / taperCount;
+                }
+                final dynamicWidth = element.strokeWidth * (0.5 + taper * 0.5);
 
-                brushPaint.strokeWidth = dynamicWidth.clamp(1.0, element.strokeWidth * 2.2);
+                brushPaint.strokeWidth = dynamicWidth.clamp(1.0, element.strokeWidth * 1.15);
                 canvas.drawLine(p1, p2, brushPaint);
               }
 
-              if (isActive && element.predictedTip != null && element.points.isNotEmpty) {
+              if (isActive && element.points.length >= 2) {
                 final lastP = element.points.last;
-                brushPaint.strokeWidth = element.strokeWidth * 0.4;
-                canvas.drawLine(lastP, element.predictedTip!, brushPaint);
+                final tip = element.predictedTip ?? lastP;
+                brushPaint.strokeWidth = element.strokeWidth;
+                canvas.drawLine(lastP, tip, brushPaint);
               }
             }
             break;
 
           case PenType.marker:
-          // Semi-transparent highlighter / marker with round caps to avoid square ending blocks
-            final markerWidth = element.strokeWidth * 1.4;
+            // Semi-transparent highlighter / marker without dark overlapping patches
+            final markerWidth = element.strokeWidth;
             _strokePaint
               ..maskFilter = null
               ..strokeCap = StrokeCap.round
               ..strokeJoin = StrokeJoin.round
               ..strokeWidth = markerWidth
-              ..color = element.color.withOpacity(0.40);
+              ..color = element.color.withValues(alpha: 0.40);
 
             if (element.points.length == 1) {
-              canvas.drawCircle(element.points[0], markerWidth / 2, _fillPaint..color = element.color.withOpacity(0.40));
+              canvas.drawCircle(element.points[0], markerWidth / 2, _fillPaint..color = element.color.withValues(alpha: 0.40));
             } else if (element.points.length > 1) {
               canvas.drawPath(element.path, _strokePaint);
-
-              final p1 = element.points[element.points.length - 2];
-              final p2 = element.points[element.points.length - 1];
-              final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-              canvas.drawLine(mid, p2, _strokePaint);
+              final p2 = element.points.last;
               if (isActive && element.predictedTip != null) {
-                canvas.drawLine(p2, element.predictedTip!, _strokePaint);
+                final tip = element.predictedTip!;
+                if ((tip - p2).distance > 1.5) {
+                  canvas.drawLine(p2, tip, _strokePaint);
+                }
               }
             }
             break;

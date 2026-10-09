@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'features/whiteboard/state/whiteboard_provider.dart';
+import 'features/auth/providers/auth_provider.dart';
 import 'features/whiteboard/screens/whiteboard_screen.dart';
 import 'firebase_options.dart';
 
@@ -17,7 +18,10 @@ void main() async {
   }
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => WhiteboardProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => WhiteboardProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
       child: const MyApp(),
     ),
   );

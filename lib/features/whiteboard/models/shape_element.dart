@@ -25,18 +25,18 @@ class ShapeElement extends BoardElement {
 
   @override
   Map<String, dynamic> toJson() => {
-        'type': 'shape',
-        'id': id,
-        'position': {'dx': position.dx, 'dy': position.dy},
-        'rotation': rotation,
-        'scale': scale,
-        'docPage': docPage,
-        'shapeType': shapeType.name,
-        'endPoint': {'dx': endPoint.dx, 'dy': endPoint.dy},
-        'color': color.value,
-        'strokeWidth': strokeWidth,
-        'showDimensions': showDimensions,
-      };
+    'type': 'shape',
+    'id': id,
+    'position': {'dx': position.dx, 'dy': position.dy},
+    'rotation': rotation,
+    'scale': scale,
+    'docPage': docPage,
+    'shapeType': shapeType.name,
+    'endPoint': {'dx': endPoint.dx, 'dy': endPoint.dy},
+    'color': color.value,
+    'strokeWidth': strokeWidth,
+    'showDimensions': showDimensions,
+  };
 
   factory ShapeElement.fromJson(Map<String, dynamic> json) {
     return ShapeElement(
