@@ -61,9 +61,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     return false;
   }
 
+  Offset _getCanvasLocalPos(PointerEvent event) {
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      return renderBox.globalToLocal(event.position);
+    }
+    return event.localPosition;
+  }
+
   void _onPointerDown(PointerDownEvent event, WhiteboardProvider provider) {
     _pointers[event.pointer] = event;
-    final localPos = event.localPosition;
+    final localPos = _getCanvasLocalPos(event);
     final pointerId = event.pointer;
     _smoothedDeltas[pointerId] = Offset.zero;
     _tipOffsets[pointerId] = Offset.zero;
@@ -125,7 +133,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   void _processSinglePointerMove(PointerMoveEvent event, WhiteboardProvider provider) {
     final pointerId = event.pointer;
-    final localPos = event.localPosition;
+    final localPos = _getCanvasLocalPos(event);
 
     if (_isEraserMode(event)) {
       if (!_isUsingGestureEraser) {
@@ -166,7 +174,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     if (active is StrokeElement) {
       if (active.addPoint(localPos)) {
-        active.predictedTip = null; // Removed prediction for maximum raw pen speed & direct touch tracking
+        active.predictedTip = null; // No artificial stick prediction to prevent elastic rubber-band feel
         _activeLayerPulse.value++;
       }
     } else if (active is ShapeElement) {
@@ -177,10 +185,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   void _onPointerUp(PointerUpEvent event, WhiteboardProvider provider) {
     final pointerId = event.pointer;
+    final localPos = _getCanvasLocalPos(event);
 
     if (_isUsingGestureEraser && _eraserPositions.containsKey(pointerId)) {
-      final lastPos = _lastEraserPositions[pointerId] ?? event.localPosition;
-      provider.partialErase(event.localPosition, (provider.eraserSize * 1.6).clamp(35.0, 90.0), lastPos: lastPos);
+      final lastPos = _lastEraserPositions[pointerId] ?? localPos;
+      provider.partialErase(localPos, (provider.eraserSize * 1.6).clamp(35.0, 90.0), lastPos: lastPos);
     }
 
     _pointers.remove(pointerId);
@@ -243,7 +252,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     for (var entry in _pointers.entries) {
       final id = entry.key;
       final event = entry.value;
-      final pos = event.localPosition;
+      final pos = _getCanvasLocalPos(event);
       _eraserPositions[id] = pos;
       _lastEraserPositions[id] = pos;
       provider.partialErase(pos, (provider.eraserSize * 1.6).clamp(35.0, 90.0), lastPos: pos);
@@ -319,11 +328,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(6),
                                   boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.25),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
+                                    BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4)),
                                   ],
                                 ),
                                 child: ClipRRect(
@@ -405,7 +410,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                 ),
                 ValueListenableBuilder<int>(
                   valueListenable: _activeLayerPulse,
-                  builder: (context, _, __) {
+                  builder: (context, _, _) {
                     return CustomPaint(
                       isComplex: false,
                       willChange: true,
@@ -421,7 +426,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                 ),
                 ValueListenableBuilder<int>(
                   valueListenable: _activeLayerPulse,
-                  builder: (context, _, __) {
+                  builder: (context, _, _) {
                     if (_eraserPositions.isEmpty) return const SizedBox.shrink();
                     final provider = Provider.of<WhiteboardProvider>(context, listen: false);
 
@@ -666,9 +671,11 @@ class WhiteboardPainter extends CustomPainter {
               canvas.drawCircle(element.points[0], element.strokeWidth / 2, _fillPaint..color = element.color);
             } else if (element.points.length > 1) {
               canvas.drawPath(element.path, _strokePaint);
-              final p2 = element.points.last;
-              if (isActive && element.predictedTip != null) {
-                canvas.drawLine(p2, element.predictedTip!, _strokePaint);
+              if (isActive) {
+                final p1 = element.points[element.points.length - 2];
+                final p2 = element.points.last;
+                final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+                canvas.drawLine(mid, p2, _strokePaint);
               }
             }
             break;
@@ -690,8 +697,7 @@ class WhiteboardPainter extends CustomPainter {
 
               if (n == 2) {
                 calligraphyPaint.strokeWidth = (smoothedWidths[0] + smoothedWidths[1]) / 2;
-                final tip = (isActive && element.predictedTip != null) ? element.predictedTip! : points[1];
-                canvas.drawLine(points[0], tip, calligraphyPaint);
+                canvas.drawLine(points[0], points[1], calligraphyPaint);
               } else {
                 for (var i = 0; i < n - 1; i++) {
                   final pA = points[i];
@@ -712,9 +718,10 @@ class WhiteboardPainter extends CustomPainter {
 
               if (isActive && points.length >= 2) {
                 final lastP = points.last;
-                final tip = element.predictedTip ?? lastP;
+                final prevP = points[points.length - 2];
+                final midP = Offset((prevP.dx + lastP.dx) / 2, (prevP.dy + lastP.dy) / 2);
                 calligraphyPaint.strokeWidth = smoothedWidths.last;
-                canvas.drawLine(lastP, tip, calligraphyPaint);
+                canvas.drawLine(midP, lastP, calligraphyPaint);
               }
             }
             break;
@@ -754,9 +761,10 @@ class WhiteboardPainter extends CustomPainter {
 
               if (isActive && element.points.length >= 2) {
                 final lastP = element.points.last;
-                final tip = element.predictedTip ?? lastP;
+                final prevP = element.points[element.points.length - 2];
+                final midP = Offset((prevP.dx + lastP.dx) / 2, (prevP.dy + lastP.dy) / 2);
                 brushPaint.strokeWidth = element.strokeWidth;
-                canvas.drawLine(lastP, tip, brushPaint);
+                canvas.drawLine(midP, lastP, brushPaint);
               }
             }
             break;
@@ -775,12 +783,11 @@ class WhiteboardPainter extends CustomPainter {
               canvas.drawCircle(element.points[0], markerWidth / 2, _fillPaint..color = element.color.withValues(alpha: 0.40));
             } else if (element.points.length > 1) {
               canvas.drawPath(element.path, _strokePaint);
-              final p2 = element.points.last;
-              if (isActive && element.predictedTip != null) {
-                final tip = element.predictedTip!;
-                if ((tip - p2).distance > 1.5) {
-                  canvas.drawLine(p2, tip, _strokePaint);
-                }
+              if (isActive) {
+                final p1 = element.points[element.points.length - 2];
+                final p2 = element.points.last;
+                final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+                canvas.drawLine(mid, p2, _strokePaint);
               }
             }
             break;
@@ -929,39 +936,6 @@ class WhiteboardPainter extends CustomPainter {
     drawSideLen(bottomRight, bottomLeft, true);
   }
 
-  void _drawAngle(Canvas canvas, Offset vertex, Offset p1, Offset p2, double angleDeg) {
-    if (angleDeg.isNaN || angleDeg == 0) return;
-
-    final v1 = (p1 - vertex);
-    final v2 = (p2 - vertex);
-    double a1 = v1.direction;
-    double a2 = v2.direction;
-
-    double sweep = a2 - a1;
-    while (sweep < -pi) {
-      sweep += 2 * pi;
-    }
-    while (sweep > pi) {
-      sweep -= 2 * pi;
-    }
-
-    final radius = 22.0;
-    canvas.drawArc(
-      Rect.fromCircle(center: vertex, radius: radius),
-      a1,
-      sweep,
-      false,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.6)
-        ..strokeWidth = 1.2
-        ..style = PaintingStyle.stroke,
-    );
-
-    final textAngle = a1 + sweep / 2;
-    final textPos = vertex + Offset.fromDirection(textAngle, radius + 15);
-    _drawText(canvas, textPos, '${angleDeg.toStringAsFixed(0)}°', fontSize: 11);
-  }
-
   void _drawText(Canvas canvas, Offset position, String text, {double rotate = 0, double fontSize = 12}) {
     final textSpan = TextSpan(
       text: text,
@@ -975,57 +949,6 @@ class WhiteboardPainter extends CustomPainter {
     canvas.rotate(rotate);
     textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
     canvas.restore();
-  }
-
-  void _drawMeasurementLabel(Canvas canvas, Offset anchor, String text) {
-    final textSpan = TextSpan(
-      text: text,
-      style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-    );
-    final textPainter = TextPainter(text: textSpan, textDirection: TextDirection.ltr);
-    textPainter.layout();
-
-    const double paddingH = 8.0;
-    const double paddingV = 4.0;
-    final double boxWidth = textPainter.width + paddingH * 2;
-    final double boxHeight = textPainter.height + paddingV * 2;
-
-    final Offset boxTopLeft = Offset(anchor.dx + 12, anchor.dy - boxHeight - 12);
-    final Rect labelRect = Rect.fromLTWH(boxTopLeft.dx, boxTopLeft.dy, boxWidth, boxHeight);
-    final RRect roundedRect = RRect.fromRectAndRadius(labelRect, const Radius.circular(6));
-
-    canvas.drawRRect(
-      roundedRect,
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.75)
-        ..style = PaintingStyle.fill,
-    );
-
-    textPainter.paint(canvas, Offset(boxTopLeft.dx + paddingH, boxTopLeft.dy + paddingV));
-  }
-
-  List<double> _calculateTriangleAngles(Offset start, Offset end) {
-    final rect = Rect.fromPoints(start, end);
-    final apex = Offset(rect.centerLeft.dx + rect.width / 2, rect.top);
-    final bottomRight = Offset(rect.right, rect.bottom);
-    final bottomLeft = Offset(rect.left, rect.bottom);
-
-    double angleBetween(Offset p1, Offset vertex, Offset p2) {
-      final v1 = p1 - vertex;
-      final v2 = p2 - vertex;
-      final dot = v1.dx * v2.dx + v1.dy * v2.dy;
-      final mag1 = v1.distance;
-      final mag2 = v2.distance;
-      if (mag1 == 0 || mag2 == 0) return 0.0;
-      final cosTheta = (dot / (mag1 * mag2)).clamp(-1.0, 1.0);
-      return acos(cosTheta) * 180 / pi;
-    }
-
-    final apexAngle = angleBetween(bottomLeft, apex, bottomRight);
-    final leftAngle = angleBetween(apex, bottomLeft, bottomRight);
-    final rightAngle = angleBetween(apex, bottomRight, bottomLeft);
-
-    return [apexAngle, leftAngle, rightAngle];
   }
 
   void _drawTriangle(Canvas canvas, Offset start, Offset end, Paint paint) {

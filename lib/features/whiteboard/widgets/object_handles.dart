@@ -14,6 +14,81 @@ class _ObjectHandlesState extends State<ObjectHandles> {
   double _lastScale = 1.0;
   double _lastRotation = 0.0;
 
+  static const Color handleAccent = Color(0xFF00C8AC); // Vibrant Cyan / Teal matching Reference UI
+
+  void _showAiSelectionMenu(BuildContext context, WhiteboardProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (bottomContext) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E293B), // Premium Slate dark background
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFF8B5CF6).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'AI Assist for Selected Text',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(LucideIcons.x, color: Colors.grey, size: 20),
+                  onPressed: () => Navigator.pop(bottomContext),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            _AiOptionTile(
+              title: 'Quick Quiz',
+              subtitle: 'Generate MCQs based on selected text/notes',
+              icon: LucideIcons.sparkle,
+              color: const Color(0xFF10B981),
+              onTap: () {
+                Navigator.pop(bottomContext);
+                provider.generateAiContent(type: 'Quick Quiz', isWholeDoc: false, forSelectedOnly: true);
+              },
+            ),
+            const SizedBox(height: 10),
+            _AiOptionTile(
+              title: 'Homework',
+              subtitle: 'Create homework assignments for selected topic',
+              icon: LucideIcons.sparkles,
+              color: const Color(0xFF38BDF8),
+              onTap: () {
+                Navigator.pop(bottomContext);
+                provider.generateAiContent(type: 'Homework', isWholeDoc: false, forSelectedOnly: true);
+              },
+            ),
+            const SizedBox(height: 10),
+            _AiOptionTile(
+              title: 'Summary',
+              subtitle: 'Generate a detailed explanation & core talking points',
+              icon: LucideIcons.star,
+              color: const Color(0xFFF59E0B),
+              onTap: () {
+                Navigator.pop(bottomContext);
+                provider.generateAiContent(type: 'Summary', isWholeDoc: false, forSelectedOnly: true);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<WhiteboardProvider>(context);
@@ -38,44 +113,36 @@ class _ObjectHandlesState extends State<ObjectHandles> {
     }
 
     final rect = groupRect;
-    final isLargeScreen = MediaQuery.of(context).size.width > 1200;
-    final handleSize = isLargeScreen ? 34.0 : 26.0;
-    final sideHandleSize = isLargeScreen ? 28.0 : 22.0;
-    final iconSize = isLargeScreen ? 18.0 : 14.0;
-    final sideIconSize = isLargeScreen ? 16.0 : 12.0;
-    final padding = isLargeScreen ? 14.0 : 6.0;
+    const padding = 10.0;
+    const cornerHandleSize = 18.0;
+    const stemHeight = 28.0;
 
     // Boundary positions for selection box
     final boxLeft = rect.left - padding;
     final boxRight = rect.right + padding;
     final boxTop = rect.top - padding;
     final boxBottom = rect.bottom + padding;
+    final boxWidth = boxRight - boxLeft;
+    final boxHeight = boxBottom - boxTop;
     final boxCenterX = rect.center.dx;
-    final boxCenterY = rect.center.dy;
 
     return Stack(
       children: [
-        // Selection Outline with rounded corners and glow
+        // 1. Clean Cyan Dashed Bounding Box
         Positioned(
           left: boxLeft,
           top: boxTop,
-          width: boxRight - boxLeft,
-          height: boxBottom - boxTop,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.blue.withValues(alpha: 0.8), width: 1.5),
-              boxShadow: [BoxShadow(color: Colors.blue.withValues(alpha: 0.15), blurRadius: 10, spreadRadius: 2)],
-            ),
-          ),
+          width: boxWidth,
+          height: boxHeight,
+          child: CustomPaint(painter: _DashedBorderPainter(color: handleAccent, strokeWidth: 1.8)),
         ),
 
-        // Multi-touch 2-Finger Pinch Scale, Twist Rotate, and Drag Move area
+        // 2. Center Drag & Pinch Scale Gesture Area
         Positioned(
           left: boxLeft,
           top: boxTop,
-          width: boxRight - boxLeft,
-          height: boxBottom - boxTop,
+          width: boxWidth,
+          height: boxHeight,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onScaleStart: (details) {
@@ -106,28 +173,22 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           ),
         ),
 
-        // Delete handle (Top Right - Offset above)
+        // 3. Top Rotation Stem Line
         Positioned(
-          left: boxRight + 4.0,
-          top: boxTop - handleSize - 8.0,
-          child: _SelectionHandle(
-            icon: LucideIcons.trash2,
-            color: Colors.redAccent,
-            size: handleSize,
-            iconSize: iconSize,
-            onTap: () => provider.removeSelectedElements(),
-          ),
+          left: boxCenterX - 1,
+          top: boxTop - stemHeight,
+          width: 2,
+          height: stemHeight,
+          child: CustomPaint(painter: _RotationStemPainter(color: handleAccent)),
         ),
 
-        // Rotate handle (Top Center - Offset above)
+        // 4. Top Rotation Handle Node (●)
         Positioned(
-          left: boxCenterX - (handleSize / 2),
-          top: boxTop - handleSize - 10.0,
-          child: _SelectionHandle(
-            icon: LucideIcons.rotateCw,
-            color: Colors.blue,
-            size: handleSize,
-            iconSize: iconSize,
+          left: boxCenterX - (cornerHandleSize / 2),
+          top: boxTop - stemHeight - (cornerHandleSize / 2),
+          child: _CornerNodeHandle(
+            color: handleAccent,
+            size: cornerHandleSize,
             onPanUpdate: (d) {
               final center = rect.center;
               final oldDir = (d.globalPosition - d.delta - center).direction;
@@ -139,123 +200,95 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           ),
         ),
 
-        // --- 8 DIRECTIONAL RESIZE HANDLES ---
-
-        // 1. Top-Left Corner
+        // 5. Delete Action Handle (Top-Right Offset)
         Positioned(
-          left: boxLeft - (handleSize / 2),
-          top: boxTop - (handleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.scaling,
-            color: Colors.blue,
-            size: handleSize,
-            iconSize: iconSize,
+          left: boxRight + 8,
+          top: boxTop - 12,
+          child: GestureDetector(
+            onTap: () => provider.removeSelectedElements(),
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.redAccent, width: 1.5),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.20), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: const Icon(LucideIcons.trash2, color: Colors.redAccent, size: 14),
+            ),
+          ),
+        ),
+
+        // 6. AI Assist Action Handle (Top-Right Offset next to Delete)
+        Positioned(
+          left: boxRight + 40,
+          top: boxTop - 12,
+          child: GestureDetector(
+            onTap: () => _showAiSelectionMenu(context, provider),
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF8B5CF6), width: 1.5),
+                boxShadow: [BoxShadow(color: const Color(0xFF8B5CF6).withValues(alpha: 0.30), blurRadius: 6, offset: const Offset(0, 2))],
+              ),
+              child: const Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 14),
+            ),
+          ),
+        ),
+
+        // --- 4 CORNER RESIZE HANDLES (Solid Cyan Circular Nodes matching Reference UI) ---
+
+        // Top-Left Corner
+        Positioned(
+          left: boxLeft - (cornerHandleSize / 2),
+          top: boxTop - (cornerHandleSize / 2),
+          child: _CornerNodeHandle(
+            color: handleAccent,
+            size: cornerHandleSize,
             onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.topLeft, d.delta),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
         ),
 
-        // 2. Top-Center Side
+        // Top-Right Corner
         Positioned(
-          left: boxCenterX - (sideHandleSize / 2),
-          top: boxTop - (sideHandleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.chevronsUpDown,
-            color: Colors.indigoAccent,
-            size: sideHandleSize,
-            iconSize: sideIconSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.topCenter, d.delta),
-            onPanStart: (_) => provider.startTransform(),
-            onPanEnd: (_) => provider.endTransform(),
-          ),
-        ),
-
-        // 3. Top-Right Corner
-        Positioned(
-          left: boxRight - (handleSize / 2),
-          top: boxTop - (handleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.scaling,
-            color: Colors.blue,
-            size: handleSize,
-            iconSize: iconSize,
+          left: boxRight - (cornerHandleSize / 2),
+          top: boxTop - (cornerHandleSize / 2),
+          child: _CornerNodeHandle(
+            color: handleAccent,
+            size: cornerHandleSize,
             onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.topRight, d.delta),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
         ),
 
-        // 4. Middle-Right Side
+        // Bottom-Right Corner
         Positioned(
-          left: boxRight - (sideHandleSize / 2),
-          top: boxCenterY - (sideHandleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.chevronsLeftRight,
-            color: Colors.indigoAccent,
-            size: sideHandleSize,
-            iconSize: sideIconSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.middleRight, d.delta),
-            onPanStart: (_) => provider.startTransform(),
-            onPanEnd: (_) => provider.endTransform(),
-          ),
-        ),
-
-        // 5. Bottom-Right Corner
-        Positioned(
-          left: boxRight - (handleSize / 2),
-          top: boxBottom - (handleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.scaling,
-            color: Colors.blue,
-            size: handleSize,
-            iconSize: iconSize,
+          left: boxRight - (cornerHandleSize / 2),
+          top: boxBottom - (cornerHandleSize / 2),
+          child: _CornerNodeHandle(
+            color: handleAccent,
+            size: cornerHandleSize,
             onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.bottomRight, d.delta),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
         ),
 
-        // 6. Bottom-Center Side
+        // Bottom-Left Corner
         Positioned(
-          left: boxCenterX - (sideHandleSize / 2),
-          top: boxBottom - (sideHandleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.chevronsUpDown,
-            color: Colors.indigoAccent,
-            size: sideHandleSize,
-            iconSize: sideIconSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.bottomCenter, d.delta),
-            onPanStart: (_) => provider.startTransform(),
-            onPanEnd: (_) => provider.endTransform(),
-          ),
-        ),
-
-        // 7. Bottom-Left Corner
-        Positioned(
-          left: boxLeft - (handleSize / 2),
-          top: boxBottom - (handleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.scaling,
-            color: Colors.blue,
-            size: handleSize,
-            iconSize: iconSize,
+          left: boxLeft - (cornerHandleSize / 2),
+          top: boxBottom - (cornerHandleSize / 2),
+          child: _CornerNodeHandle(
+            color: handleAccent,
+            size: cornerHandleSize,
             onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.bottomLeft, d.delta),
-            onPanStart: (_) => provider.startTransform(),
-            onPanEnd: (_) => provider.endTransform(),
-          ),
-        ),
-
-        // 8. Middle-Left Side
-        Positioned(
-          left: boxLeft - (sideHandleSize / 2),
-          top: boxCenterY - (sideHandleSize / 2),
-          child: _SelectionHandle(
-            icon: LucideIcons.chevronsLeftRight,
-            color: Colors.indigoAccent,
-            size: sideHandleSize,
-            iconSize: sideIconSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.middleLeft, d.delta),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
@@ -265,31 +298,18 @@ class _ObjectHandlesState extends State<ObjectHandles> {
   }
 }
 
-class _SelectionHandle extends StatelessWidget {
-  final IconData icon;
+class _CornerNodeHandle extends StatelessWidget {
   final Color color;
   final double size;
-  final double iconSize;
-  final VoidCallback? onTap;
   final Function(DragUpdateDetails)? onPanUpdate;
   final Function(DragStartDetails)? onPanStart;
   final Function(DragEndDetails)? onPanEnd;
 
-  const _SelectionHandle({
-    required this.icon,
-    required this.color,
-    required this.size,
-    required this.iconSize,
-    this.onTap,
-    this.onPanUpdate,
-    this.onPanStart,
-    this.onPanEnd,
-  });
+  const _CornerNodeHandle({required this.color, required this.size, this.onPanUpdate, this.onPanStart, this.onPanEnd});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
       onPanStart: onPanStart,
       onPanUpdate: onPanUpdate,
       onPanEnd: onPanEnd,
@@ -297,13 +317,116 @@ class _SelectionHandle extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: color,
           shape: BoxShape.circle,
-          border: Border.all(color: color, width: 2),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 4, offset: const Offset(0, 2))],
+          border: Border.all(color: Colors.white, width: 2.2),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2))],
         ),
-        child: Icon(icon, color: color, size: iconSize),
       ),
     );
   }
+}
+
+class _AiOptionTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AiOptionTile({required this.title, required this.subtitle, required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(LucideIcons.chevronRight, color: Colors.grey, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+
+  _DashedBorderPainter({required this.color, this.strokeWidth = 1.8});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final RRect rrect = RRect.fromLTRBR(0, 0, size.width, size.height, const Radius.circular(4));
+    final Path path = Path()..addRRect(rrect);
+
+    const double dashWidth = 6.0;
+    const double dashSpace = 4.0;
+
+    for (final metric in path.computeMetrics()) {
+      double distance = 0.0;
+      while (distance < metric.length) {
+        final Path extract = metric.extractPath(distance, distance + dashWidth);
+        canvas.drawPath(extract, paint);
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) {
+    return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
+  }
+}
+
+class _RotationStemPainter extends CustomPainter {
+  final Color color;
+
+  _RotationStemPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.8
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(Offset(size.width / 2, size.height), Offset(size.width / 2, 0), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _RotationStemPainter oldDelegate) => oldDelegate.color != color;
 }

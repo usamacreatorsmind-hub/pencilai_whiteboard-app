@@ -415,131 +415,81 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void resizeSelectedElement(HandleDirection direction, Offset delta) {
-    for (var id in _selectedElementIds) {
-      final element = currentPage.elements.firstWhere((e) => e.id == id);
+    if (_selectedElementIds.isEmpty) return;
 
-      if (element is ImageElement || element is DocumentElement) {
-        final Size currentSize = element is ImageElement ? element.size : (element as DocumentElement).size;
+    final selectedElements = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
+    if (selectedElements.isEmpty) return;
 
-        double currentW = currentSize.width * element.scale;
-        double currentH = currentSize.height * element.scale;
-
-        double left = element.position.dx;
-        double top = element.position.dy;
-        double newW = currentW;
-        double newH = currentH;
-
-        const double minDimension = 40.0;
-
-        switch (direction) {
-          case HandleDirection.middleRight:
-            newW = (currentW + delta.dx).clamp(minDimension, 10000.0);
-            break;
-
-          case HandleDirection.middleLeft:
-            final maxDx = currentW - minDimension;
-            final clampedDx = delta.dx.clamp(-10000.0, maxDx);
-            left += clampedDx;
-            newW = currentW - clampedDx;
-            break;
-
-          case HandleDirection.bottomCenter:
-            newH = (currentH + delta.dy).clamp(minDimension, 10000.0);
-            break;
-
-          case HandleDirection.topCenter:
-            final maxDy = currentH - minDimension;
-            final clampedDy = delta.dy.clamp(-10000.0, maxDy);
-            top += clampedDy;
-            newH = currentH - clampedDy;
-            break;
-
-          case HandleDirection.bottomRight:
-            newW = (currentW + delta.dx).clamp(minDimension, 10000.0);
-            newH = (currentH + delta.dy).clamp(minDimension, 10000.0);
-            break;
-
-          case HandleDirection.bottomLeft:
-            final maxDx = currentW - minDimension;
-            final clampedDx = delta.dx.clamp(-10000.0, maxDx);
-            left += clampedDx;
-            newW = currentW - clampedDx;
-            newH = (currentH + delta.dy).clamp(minDimension, 10000.0);
-            break;
-
-          case HandleDirection.topRight:
-            newW = (currentW + delta.dx).clamp(minDimension, 10000.0);
-            final maxDy = currentH - minDimension;
-            final clampedDy = delta.dy.clamp(-10000.0, maxDy);
-            top += clampedDy;
-            newH = currentH - clampedDy;
-            break;
-
-          case HandleDirection.topLeft:
-            final maxDx = currentW - minDimension;
-            final clampedDx = delta.dx.clamp(-10000.0, maxDx);
-            left += clampedDx;
-            newW = currentW - clampedDx;
-
-            final maxDy = currentH - minDimension;
-            final clampedDy = delta.dy.clamp(-10000.0, maxDy);
-            top += clampedDy;
-            newH = currentH - clampedDy;
-            break;
-        }
-
-        element.position = Offset(left, top);
-        element.scale = 1.0;
-        if (element is ImageElement) {
-          element.size = Size(newW, newH);
-        } else if (element is DocumentElement) {
-          element.size = Size(newW, newH);
-        }
-        element.invalidateBounds();
-      } else if (element is ShapeElement) {
-        Offset start = element.position;
-        Offset end = element.endPoint;
-
-        double left = min(start.dx, end.dx);
-        double right = max(start.dx, end.dx);
-        double top = min(start.dy, end.dy);
-        double bottom = max(start.dy, end.dy);
-
-        switch (direction) {
-          case HandleDirection.middleRight:
-            right += delta.dx;
-            break;
-          case HandleDirection.middleLeft:
-            left += delta.dx;
-            break;
-          case HandleDirection.bottomCenter:
-            bottom += delta.dy;
-            break;
-          case HandleDirection.topCenter:
-            top += delta.dy;
-            break;
-          case HandleDirection.bottomRight:
-            right += delta.dx;
-            bottom += delta.dy;
-            break;
-          case HandleDirection.bottomLeft:
-            left += delta.dx;
-            bottom += delta.dy;
-            break;
-          case HandleDirection.topRight:
-            right += delta.dx;
-            top += delta.dy;
-            break;
-          case HandleDirection.topLeft:
-            left += delta.dx;
-            top += delta.dy;
-            break;
-        }
-
-        element.position = Offset(left, top);
-        element.endPoint = Offset(right, bottom);
-        element.invalidateBounds();
+    // 1. Calculate Group Bounds and Group Center
+    Rect groupRect = selectedElements[0].getRawBounds();
+    if (selectedElements.length == 1) {
+      final e = selectedElements[0];
+      groupRect = Rect.fromCenter(center: groupRect.center, width: groupRect.width * e.scale, height: groupRect.height * e.scale);
+    } else {
+      for (var i = 1; i < selectedElements.length; i++) {
+        final e = selectedElements[i];
+        final r = e.getRawBounds();
+        final visualR = Rect.fromCenter(center: r.center, width: r.width * e.scale, height: r.height * e.scale);
+        groupRect = groupRect.expandToInclude(visualR);
       }
+    }
+
+    final double groupW = max(20.0, groupRect.width);
+    final double groupH = max(20.0, groupRect.height);
+
+    // 2. Compute Scale Factor for the entire Group
+    double scaleFactor = 1.0;
+    switch (direction) {
+      case HandleDirection.bottomRight:
+      case HandleDirection.topRight:
+      case HandleDirection.middleRight:
+        scaleFactor = 1.0 + (delta.dx / groupW);
+        break;
+      case HandleDirection.bottomLeft:
+      case HandleDirection.topLeft:
+      case HandleDirection.middleLeft:
+        scaleFactor = 1.0 - (delta.dx / groupW);
+        break;
+      case HandleDirection.bottomCenter:
+        scaleFactor = 1.0 + (delta.dy / groupH);
+        break;
+      case HandleDirection.topCenter:
+        scaleFactor = 1.0 - (delta.dy / groupH);
+        break;
+    }
+
+    scaleFactor = scaleFactor.clamp(0.2, 5.0);
+    if (scaleFactor == 1.0) return;
+
+    final Offset groupCenter = groupRect.center;
+
+    // 3. Apply Group Scaling to ALL selected elements
+    for (var element in selectedElements) {
+      if (selectedElements.length > 1) {
+        // Shift element position relative to group center so elements spread/shrink proportionally
+        final Offset currentCenter = element.getRawBounds().center;
+        final Offset relativePos = currentCenter - groupCenter;
+        final Offset newRelativePos = relativePos * scaleFactor;
+        final Offset posDelta = newRelativePos - relativePos;
+
+        element.position += posDelta;
+        _updateInternalPoints(element, posDelta);
+      }
+
+      if (element is ImageElement) {
+        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+      } else if (element is DocumentElement) {
+        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+      } else if (element is ShapeElement) {
+        final center = element.getRawBounds().center;
+        element.position = center + (element.position - center) * scaleFactor;
+        element.endPoint = center + (element.endPoint - center) * scaleFactor;
+      } else if (element is StrokeElement) {
+        element.scale = (element.scale * scaleFactor).clamp(0.1, 10.0);
+        element.invalidatePath();
+      }
+
+      element.invalidateBounds();
     }
     _notify();
   }
@@ -965,7 +915,7 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> generateAiContent({required String type, required bool isWholeDoc}) async {
+  Future<void> generateAiContent({required String type, required bool isWholeDoc, bool forSelectedOnly = false}) async {
     _isAiPanelOpen = true;
     _isAiLoading = true;
     _aiTitle = type;
@@ -975,7 +925,25 @@ class WhiteboardProvider extends ChangeNotifier {
     StringBuffer contentBuffer = StringBuffer();
     List<String> imagePaths = [];
 
-    if (isWholeDoc) {
+    if (forSelectedOnly && _selectedElementIds.isNotEmpty) {
+      contentBuffer.writeln('--- Selected Content from Slide ${_currentPageIndex + 1} ---');
+      final selectedElements = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
+      for (var el in selectedElements) {
+        if (el is ImageElement && el.imageUrl.isNotEmpty) {
+          imagePaths.add(el.imageUrl);
+        } else if (el is DocumentElement) {
+          contentBuffer.writeln(el.fileName);
+        } else if (el is StrokeElement) {
+          contentBuffer.writeln('Handwritten text/drawing stroke.');
+        }
+      }
+      if (imagePaths.isEmpty && canvasKey != null) {
+        final canvasImagePath = await BoardStorageService().captureCanvasToTempFile(canvasKey!);
+        if (canvasImagePath != null) {
+          imagePaths.add(canvasImagePath);
+        }
+      }
+    } else if (isWholeDoc) {
       for (int i = 0; i < _pages.length; i++) {
         contentBuffer.writeln('--- Slide ${i + 1} ---');
         for (var el in _pages[i].elements) {

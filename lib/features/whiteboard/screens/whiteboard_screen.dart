@@ -114,7 +114,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             onPressed: () async {
               Navigator.pop(dialogContext);
               try {
-                final path = await _storageService.exportToImage(_canvasKey);
                 if (mounted) {
                   scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('Image saved successfully!')));
                 }
