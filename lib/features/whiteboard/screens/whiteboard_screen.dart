@@ -11,6 +11,12 @@ import '../widgets/page_switcher.dart';
 import '../widgets/slide_overview_sidebar.dart';
 import '../widgets/ai_floating_menu_widget.dart';
 import '../widgets/ai_result_panel.dart';
+import '../widgets/ruler_widget.dart';
+import '../widgets/protractor_widget.dart';
+import '../widgets/setsquare_widget.dart';
+import '../widgets/compass_widget.dart';
+import '../models/stroke_element.dart';
+import 'package:uuid/uuid.dart';
 import '../services/board_storage_service.dart';
 import '../state/whiteboard_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -28,7 +34,12 @@ class WhiteboardScreen extends StatefulWidget {
 class _WhiteboardScreenState extends State<WhiteboardScreen> {
   final GlobalKey _canvasKey = GlobalKey();
   final BoardStorageService _storageService = BoardStorageService();
+  late final AuthProvider _auth;
   bool _isSidebarOpen = false;
+  bool _showRuler = false;
+  bool _showProtractor = false;
+  bool _showSetSquare = false;
+  bool _showCompass = false;
   bool _dialogShown = false;
   bool _isConnected = true;
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
@@ -36,6 +47,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void initState() {
     super.initState();
+    _auth = Provider.of<AuthProvider>(context, listen: false);
     // Ensure immersive mode is active when screen starts
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -50,8 +62,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     // Listen to AuthProvider for async account loading completion
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<WhiteboardProvider>(context, listen: false).canvasKey = _canvasKey;
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-      auth.addListener(_onAuthStateChanged);
+      _auth.addListener(_onAuthStateChanged);
       _checkAndShowAccountSelection();
     });
   }
@@ -67,8 +78,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    auth.removeListener(_onAuthStateChanged);
+    _auth.removeListener(_onAuthStateChanged);
     super.dispose();
   }
 
@@ -96,6 +106,33 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
   }
 
+
+  /// Global (screen) points -> canvas coords (pan hata ke)
+  List<Offset> _toCanvasPoints(List<Offset> globalPoints) {
+    final renderBox = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return const [];
+    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
+    return globalPoints.map((gp) => provider.screenToCanvas(renderBox.globalToLocal(gp))).toList();
+  }
+
+  void _addStrokeFromGlobal(List<Offset> globalPoints) {
+    final pts = _toCanvasPoints(globalPoints);
+    if (pts.length < 2) return;
+    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
+    provider.addElement(
+      StrokeElement(
+        id: const Uuid().v4(),
+        position: pts.first,
+        points: pts,
+        color: provider.currentColor,
+        strokeWidth: provider.strokeWidth,
+        penType: provider.currentPenType,
+        docPage: provider.isDocumentOverlayOpen ? provider.overlayCurrentPage : null,
+      ),
+    );
+  }
+
+
   void _handleSave() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
@@ -114,6 +151,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             onPressed: () async {
               Navigator.pop(dialogContext);
               try {
+                await _storageService.exportToImage(_canvasKey);
                 if (mounted) {
                   scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('Image saved successfully!')));
                 }
@@ -272,6 +310,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               ),
             Expanded(
               child: Stack(
+                clipBehavior: Clip.none,
                 children: [
                   Consumer<WhiteboardProvider>(
                     builder: (context, provider, _) => RepaintBoundary(
@@ -301,7 +340,63 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       child: SlideOverviewSidebar(onClose: () => setState(() => _isSidebarOpen = false)),
                     ),
                   ],
-                  Positioned(bottom: 10, left: 0, right: 0, child: Center(child: const WhiteboardToolbar())),
+                  Positioned(
+                    bottom: 10,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: WhiteboardToolbar(
+                        onOpenRuler: () => setState(() => _showRuler = true),
+                        onOpenProtractor: () => setState(() => _showProtractor = true),
+                        onOpenSetSquare: () => setState(() => _showSetSquare = true),
+                        onOpenCompass: () => setState(() => _showCompass = true),
+                      ),
+                    ),
+                  ),
+                  if (_showRuler)
+                    RulerWidget(
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 220,
+                        MediaQuery.of(context).size.height / 2 - 55,
+                      ),
+                      onClose: () => setState(() => _showRuler = false),
+                    ),
+                  if (_showProtractor)
+                    ProtractorWidget(
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 180,
+                        MediaQuery.of(context).size.height / 2 - 95,
+                      ),
+                      onClose: () => setState(() => _showProtractor = false),
+                      onDrawAngle: (shape) {
+                        _addStrokeFromGlobal(shape.strokePoints);
+                        if (shape.markerPoints.isNotEmpty) {
+                          _addStrokeFromGlobal(shape.markerPoints);
+                        }
+                      },
+                    ),
+                  if (_showSetSquare)
+                    SetSquareWidget(
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 140,
+                        MediaQuery.of(context).size.height / 2 - 100,
+                      ),
+                      onClose: () => setState(() => _showSetSquare = false),
+                      onDrawLine: (points) {
+                        _addStrokeFromGlobal(points);
+                      },
+                    ),
+                  if (_showCompass)
+                    CompassWidget(
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 130,
+                        MediaQuery.of(context).size.height / 2 - 130,
+                      ),
+                      onClose: () => setState(() => _showCompass = false),
+                      onDrawArc: (points) {
+                        _addStrokeFromGlobal(points);
+                      },
+                    ),
                   Positioned(bottom: 10, right: 30, child: PageSwitcher(onPageCountTap: () => setState(() => _isSidebarOpen = !_isSidebarOpen))),
                   Positioned(
                     bottom: 10,

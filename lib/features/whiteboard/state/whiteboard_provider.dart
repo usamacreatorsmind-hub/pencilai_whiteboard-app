@@ -7,10 +7,16 @@ import '../models/stroke_element.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
 import '../models/document_element.dart';
+import '../models/text_element.dart';
+import '../models/table_element.dart';
+import '../models/mind_map_element.dart';
 import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
+import '../widgets/whiteboard_canvas.dart';
 
-enum WhiteboardTool { pen, eraser, shape, image, select }
+enum WhiteboardTool { pen, eraser, shape, image, select, preview }
+
+enum PenProfile { thin, thick }
 
 abstract class Command {
   void execute(WhiteboardProvider provider);
@@ -144,10 +150,22 @@ class WhiteboardProvider extends ChangeNotifier {
   int _boardVersion = 0;
 
   WhiteboardTool _currentTool = WhiteboardTool.pen;
-  Color _currentColor = Colors.black;
-  final Map<PenType, double> _penStrokeWidths = {PenType.pen: 2.0, PenType.fountainPen: 2.0, PenType.brush: 2.0, PenType.marker: 2.0};
-  double _eraserSize = 25.0;
-  PenType _currentPenType = PenType.pen;
+  PenProfile _activePenProfile = PenProfile.thin;
+
+  // Thin Pen Profile Settings
+  Color _thinColor = Colors.black;
+  PenType _thinPenType = PenType.pen;
+  final Map<PenType, double> _thinPenStrokeWidths = {PenType.pen: 2.0, PenType.fountainPen: 2.0, PenType.brush: 2.0, PenType.marker: 2.0};
+
+  // Thick Pen Profile Settings
+  Color _thickColor = Colors.blue;
+  PenType _thickPenType = PenType.pen;
+  final Map<PenType, double> _thickPenStrokeWidths = {PenType.pen: 3.0, PenType.fountainPen: 3.0, PenType.brush: 3.0, PenType.marker: 3.0};
+
+  double _nibRadiusThreshold = 1.5;
+  double _lastDetectedRadius = 0.0;
+
+  double _eraserSize = 60.0;
   ShapeType _currentShapeType = ShapeType.rectangle;
 
   final Set<String> _selectedElementIds = {};
@@ -162,12 +180,29 @@ class WhiteboardProvider extends ChangeNotifier {
   BoardPage get currentPage => _pages[_currentPageIndex];
   int get boardVersion => _boardVersion;
   WhiteboardTool get currentTool => _currentTool;
-  Color get currentColor => _currentColor;
-  double get strokeWidth => _penStrokeWidths[_currentPenType] ?? 2.0;
+
+  PenProfile get activePenProfile => _activePenProfile;
+  Color get thinColor => _thinColor;
+  Color get thickColor => _thickColor;
+  PenType get thinPenType => _thinPenType;
+  PenType get thickPenType => _thickPenType;
+  double get thinStrokeWidth => _thinPenStrokeWidths[_thinPenType] ?? 2.0;
+  double get thickStrokeWidth => _thickPenStrokeWidths[_thickPenType] ?? 6.0;
+
+  Color get currentColor => _activePenProfile == PenProfile.thin ? _thinColor : _thickColor;
+  PenType get currentPenType => _activePenProfile == PenProfile.thin ? _thinPenType : _thickPenType;
+
+  double get strokeWidth {
+    final map = _activePenProfile == PenProfile.thin ? _thinPenStrokeWidths : _thickPenStrokeWidths;
+    return map[currentPenType] ?? (_activePenProfile == PenProfile.thin ? 2.0 : 6.0);
+  }
+
   double get eraserSize => _eraserSize;
+  double get minEraserSize => 10.0;
+  double get maxEraserSize => 60.0;
 
   double get minStrokeWidth {
-    switch (_currentPenType) {
+    switch (currentPenType) {
       case PenType.marker:
         return 1.5;
       case PenType.pen:
@@ -178,19 +213,20 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   double get maxStrokeWidth {
-    switch (_currentPenType) {
+    switch (currentPenType) {
       case PenType.pen:
-        return 6.0;
       case PenType.fountainPen:
-        return 6.0;
+        return _activePenProfile == PenProfile.thin ? 8.0 : 18.0;
       case PenType.brush:
-        return 8.0;
+        return _activePenProfile == PenProfile.thin ? 10.0 : 22.0;
       case PenType.marker:
-        return 10.0;
+        return _activePenProfile == PenProfile.thin ? 12.0 : 28.0;
     }
   }
 
-  PenType get currentPenType => _currentPenType;
+  double get nibRadiusThreshold => _nibRadiusThreshold;
+  double get lastDetectedRadius => _lastDetectedRadius;
+
   ShapeType get currentShapeType => _currentShapeType;
   Set<String> get selectedElementIds => _selectedElementIds;
   Path? get lassoPath => _lassoPath;
@@ -218,6 +254,32 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void setCanvasBackgroundColor(Color color) {
     _canvasBackgroundColor = color;
+    _notify();
+  }
+
+  Offset _canvasPanOffset = Offset.zero;
+  Offset get canvasPanOffset => _canvasPanOffset;
+
+
+
+  // Screen (viewport) coords -> canvas (element) coords
+  Offset screenToCanvas(Offset p) => p - _canvasPanOffset;
+
+  /// Canvas coords -> screen coords
+  Offset canvasToScreen(Offset p) => p + _canvasPanOffset;
+
+  /// Screen ke center ka canvas coordinate. Naya element yahan insert karo.
+  Offset viewportCenterOnCanvas(Size viewport) =>
+      screenToCanvas(Offset(viewport.width / 2, viewport.height / 2));
+
+  void panCanvas(Offset delta) {
+    _canvasPanOffset += delta;
+    notifyListeners(); // _notify() nahi: cache invalidate mat karo
+  }
+
+  void resetCanvasPan() {
+    _canvasPanOffset = Offset.zero;
+    _boardVersion++;
     _notify();
   }
 
@@ -286,10 +348,42 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void _notify() {
     _boardVersion++;
+    WhiteboardPainter.invalidateCache();
     notifyListeners();
   }
 
   // Setters
+  void setActivePenProfile(PenProfile profile) {
+    _activePenProfile = profile;
+    _currentTool = WhiteboardTool.pen;
+    _notify();
+  }
+
+  void setNibRadiusThreshold(double threshold) {
+    _nibRadiusThreshold = threshold;
+    _notify();
+  }
+
+  void autoDetectNibProfile(double radius, {bool isInvertedStylus = false}) {
+    if (_currentTool != WhiteboardTool.pen) return;
+
+    PenProfile targetProfile;
+    if (isInvertedStylus) {
+      targetProfile = PenProfile.thick;
+    } else {
+      if (radius > 6.0) return;
+      if (radius > 0) {
+        _lastDetectedRadius = radius;
+      }
+      targetProfile = radius > _nibRadiusThreshold ? PenProfile.thick : PenProfile.thin;
+    }
+
+    if (_activePenProfile != targetProfile) {
+      _activePenProfile = targetProfile;
+      _notify();
+    }
+  }
+
   void setTool(WhiteboardTool tool) {
     _currentTool = tool;
     if (tool != WhiteboardTool.select) clearSelection();
@@ -297,22 +391,31 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void setColor(Color color) {
-    _currentColor = color;
+    if (_activePenProfile == PenProfile.thin) {
+      _thinColor = color;
+    } else {
+      _thickColor = color;
+    }
     _notify();
   }
 
   void setStrokeWidth(double width) {
-    _penStrokeWidths[_currentPenType] = width.clamp(minStrokeWidth, maxStrokeWidth);
+    final map = _activePenProfile == PenProfile.thin ? _thinPenStrokeWidths : _thickPenStrokeWidths;
+    map[currentPenType] = width.clamp(minStrokeWidth, maxStrokeWidth);
     _notify();
   }
 
   void setEraserSize(double size) {
-    _eraserSize = size.clamp(10.0, 30.0);
+    _eraserSize = size.clamp(minEraserSize, maxEraserSize);
     _notify();
   }
 
   void setPenType(PenType type) {
-    _currentPenType = type;
+    if (_activePenProfile == PenProfile.thin) {
+      _thinPenType = type;
+    } else {
+      _thickPenType = type;
+    }
     _currentTool = WhiteboardTool.pen;
     _notify();
   }
@@ -345,7 +448,7 @@ class WhiteboardProvider extends ChangeNotifier {
       // Find all elements whose center or any point is inside the lasso
       _selectedElementIds.clear();
       for (var element in currentPage.elements) {
-        if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
+        if (!_isInCurrentView(element)) continue;
         final bounds = element.getRawBounds();
         // Professional check: if the center of the element is within the lasso path
         if (path.contains(bounds.center)) {
@@ -381,12 +484,201 @@ class WhiteboardProvider extends ChangeNotifier {
     clearSelection();
   }
 
+  void updateSelectedElementsColor(Color color) {
+    if (_selectedElementIds.isEmpty) return;
+    for (int i = 0; i < currentPage.elements.length; i++) {
+      final el = currentPage.elements[i];
+      if (_selectedElementIds.contains(el.id)) {
+        if (el is StrokeElement) {
+          currentPage.elements[i] = el.copyWith(color: color);
+        } else if (el is ShapeElement) {
+          currentPage.elements[i] = el.copyWith(color: color);
+        } else if (el is TextElement) {
+          currentPage.elements[i] = el.copyWith(color: color);
+        } else if (el is TableElement) {
+          currentPage.elements[i] = el.copyWith(color: color);
+        } else if (el is MindMapElement) {
+          updateMindMapNodeColor(el.id, el.selectedNodeId, color);
+        }
+      }
+    }
+    _boardVersion++;
+    _notify();
+  }
+
   void clearCurrentPage() {
     if (currentPage.elements.isEmpty) return;
     final toRemove = List<BoardElement>.from(currentPage.elements);
     final command = ClearPageCommand(toRemove, _currentPageIndex);
     _executeCommand(command);
     clearSelection();
+  }
+
+  // Mind Map Helper Operations
+  void addMindMapChildNode(String mindMapId) => _mutateMindMap(mindMapId, (el) => el.addChild(el.selectedNodeId));
+
+  void addMindMapSiblingNode(String mindMapId) => _mutateMindMap(mindMapId, (el) => el.addSibling(el.selectedNodeId));
+  // Board controller ke andar paste karo (jahan currentPage, _boardVersion, _notify() hain).
+  // Imports: mind_map_element.dart
+
+  // -----------------------------------------------------------------------------
+  // State (controller ke fields me add karo)
+  // -----------------------------------------------------------------------------
+
+  /// "..." button dabne par UI ko popup kholne ke liye batata hai.
+  /// Widget side par set karo: controller.onMindMapMenuRequested = (mmId, nodeId) { showMenu(...) };
+  void Function(String mindMapId, String nodeId)? onMindMapMenuRequested;
+
+  MindMapElement? _mmStrokeEl;
+  String? _mmStrokeNodeId;
+  List<Offset> _mmStrokePoints = [];
+
+  /// Painter live preview ke liye (element-local coords).
+  List<Offset> get mindMapLiveStroke => _mmStrokePoints;
+  String? get mindMapLiveStrokeNodeId => _mmStrokeNodeId;
+
+  // -----------------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------------
+
+  MindMapElement? _findMindMap(String id) {
+    for (final el in currentPage.elements) {
+      if (el.id == id && el is MindMapElement) return el;
+    }
+    return null;
+  }
+
+  /// Ek hi jagah: find -> (undo snapshot) -> change -> version++ -> notify
+  void _mutateMindMap(String id, void Function(MindMapElement el) change) {
+    final el = _findMindMap(id);
+    if (el == null) return;
+
+    // TODO: yahan apne undo system me snapshot push karo, e.g.
+    // _pushUndo(mindMapId: id, snapshot: el.snapshot());
+
+    change(el); // element ke methods khud updateLayout() call karte hain
+    _boardVersion++;
+    _notify();
+  }
+
+  // -----------------------------------------------------------------------------
+  // Node operations
+  // -----------------------------------------------------------------------------
+
+  void addMindMapParentNode(String mindMapId) => _mutateMindMap(mindMapId, (el) => el.addParent(el.selectedNodeId));
+
+  void toggleMindMapNodeCollapse(String mindMapId, String nodeId) {
+    _mutateMindMap(mindMapId, (el) {
+      final node = el.root.findNode(nodeId);
+      if (node != null && node.children.isNotEmpty) {
+        el.toggleCollapse(nodeId);
+      }
+    });
+  }
+
+  void deleteMindMapNode(String mindMapId) {
+    final el = _findMindMap(mindMapId);
+    if (el == null) return;
+
+    // Root delete = poora mind map element delete
+    if (el.selectedNodeId == el.root.id) {
+      removeSelectedElements();
+      return;
+    }
+    _mutateMindMap(mindMapId, (e) => e.deleteNode(e.selectedNodeId));
+  }
+
+  void updateMindMapNodeText(String mindMapId, String nodeId, String newText) {
+    _mutateMindMap(mindMapId, (el) => el.updateText(nodeId, newText));
+  }
+
+  void updateMindMapNodeColor(String mindMapId, String nodeId, Color color) {
+    _mutateMindMap(mindMapId, (el) {
+      final node = el.root.findNode(nodeId);
+      if (node != null) node.fillColor = color; // layout badalne ki zaroorat nahi
+    });
+  }
+
+  // -----------------------------------------------------------------------------
+  // Pointer handling (pen / select tool ke pointer handler me SABSE PEHLE call karo)
+  //
+  // Har method true return karta hai agar mind map ne event consume kar liya.
+  // true aaye toh normal pen stroke / selection logic MAT chalao.
+  //
+  // Assumption: el.position = element ka top-left (canvas coords), rotation = 0.
+  // -----------------------------------------------------------------------------
+
+  /// [allowStroke] = true jab pen tool active ho (node ke andar likhna).
+  bool mindMapPointerDown(Offset canvasPoint, {bool allowStroke = true}) {
+    for (final el in currentPage.elements.reversed) {
+      if (el is! MindMapElement) continue;
+
+      final local = (canvasPoint - el.position) / el.scale;
+      final bounds = (Offset.zero & el.size).inflate(MindMapElement.kHitR);
+      if (!bounds.contains(local)) continue;
+
+      // 1) On-canvas buttons (+ / ... / collapse)
+      final hit = el.hitTestAction(local);
+      if (hit != null) {
+        if (hit.action == MindMapAction.menu) {
+          el.selectedNodeId = hit.nodeId;
+          _boardVersion++;
+          _notify();
+          onMindMapMenuRequested?.call(el.id, hit.nodeId);
+        } else {
+          _mutateMindMap(el.id, (e) => e.performAction(hit));
+        }
+        return true;
+      }
+
+      // 2) Node par touch: select karo, pen active ho toh stroke shuru
+      final node = el.nodeAt(local);
+      if (node != null) {
+        el.selectedNodeId = node.id;
+        if (allowStroke) {
+          _mmStrokeEl = el;
+          _mmStrokeNodeId = node.id;
+          _mmStrokePoints = [local];
+        }
+        _boardVersion++;
+        _notify();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool mindMapPointerMove(Offset canvasPoint) {
+    final el = _mmStrokeEl;
+    if (el == null) return false;
+    _mmStrokePoints.add((canvasPoint - el.position) / el.scale);
+    _notify(); // live preview; version++ ki zaroorat nahi
+    return true;
+  }
+
+  bool mindMapPointerUp() {
+    final el = _mmStrokeEl;
+    final nodeId = _mmStrokeNodeId;
+    if (el == null || nodeId == null) return false;
+
+    final pts = _mmStrokePoints;
+    _mmStrokeEl = null;
+    _mmStrokeNodeId = null;
+    _mmStrokePoints = [];
+
+    if (pts.length >= 2) {
+      // Yahin node resize hota hai (addStroke -> updateLayout)
+      _mutateMindMap(el.id, (e) => e.addStroke(nodeId, pts));
+    } else {
+      _boardVersion++;
+      _notify();
+    }
+    return true;
+  }
+
+  void refreshBoard() {
+    _boardVersion++;
+    _notify();
   }
 
   // Multi-Transformation
@@ -480,6 +772,11 @@ class WhiteboardProvider extends ChangeNotifier {
         element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
       } else if (element is DocumentElement) {
         element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+      } else if (element is TextElement) {
+        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+        element.fontSize = (element.fontSize * scaleFactor).clamp(8.0, 200.0);
+      } else if (element is TableElement) {
+        element.size = Size(max(40.0, element.size.width * scaleFactor), max(30.0, element.size.height * scaleFactor));
       } else if (element is ShapeElement) {
         final center = element.getRawBounds().center;
         element.position = center + (element.position - center) * scaleFactor;
@@ -551,6 +848,12 @@ class WhiteboardProvider extends ChangeNotifier {
       // 4. Individual scale property
       // Multiplicative scaling prevents distortion in groups
       element.scale = (element.scale * scaleFactor).clamp(0.1, 10.0);
+      if (element is TextElement && scaleDelta != 0.0) {
+        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+        element.fontSize = (element.fontSize * scaleFactor).clamp(8.0, 200.0);
+      } else if (element is TableElement && scaleDelta != 0.0) {
+        element.size = Size(max(40.0, element.size.width * scaleFactor), max(30.0, element.size.height * scaleFactor));
+      }
 
       element.invalidateBounds();
       element.invalidatePath(); // Sync the selection box and path during drag
@@ -617,137 +920,177 @@ class WhiteboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ... Partial Erase and Hit Testing ...
-  void partialErase(Offset position, double radius, {Offset? lastPos}) {
-    List<BoardElement> toRemove = [];
-    List<BoardElement> toAdd = [];
-    bool changed = false;
+  // ===========================================================================
+  // PARTIAL ERASE (optimized)
+  //
+  // Pehle: sweep ko chhote steps me todta tha, har step par poori elements list
+  // copy hoti thi, aur har step par _notify() (= boardVersion++) chalta tha.
+  // Ab: ek call = ek single pass, koi list copy nahi, aur sirf tab ek _notify()
+  // jab kuch sach me erase hua. Z-order bhi preserve hota hai (erased stroke ke
+  // tukde usi jagah rehte hain, top par nahi jaate).
+  // ===========================================================================
 
+  /// Jo elements abhi canvas par dikh rahe hain wahi erase/hit hone chahiye.
+  /// Overlay band hai to docPage == null wale, open hai to current overlay page wale.
+  bool _isInCurrentView(BoardElement e) {
+    return _isDocumentOverlayOpen ? e.docPage == _overlayCurrentPage : e.docPage == null;
+  }
+
+  void partialErase(Offset position, double radius, {Offset? lastPos}) {
     final Offset p1 = lastPos ?? position;
     final Offset p2 = position;
-
+    final double radiusSq = radius * radius;
     final Rect eraserBox = Rect.fromPoints(p1, p2).inflate(radius);
 
-    for (var element in List.from(currentPage.elements)) {
-      if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
+    final elements = currentPage.elements;
+    final Map<String, List<BoardElement>> replacements = {};
+    List<Offset>? samples; // sirf shapes ke liye, lazily banta hai
 
-      // Fast Spatial Filter: Bounding box check
-      final rawBounds = element.getRawBounds();
-      final visualBounds = Rect.fromCenter(
-        center: rawBounds.center,
-        width: rawBounds.width * element.scale,
-        height: rawBounds.height * element.scale,
-      );
+    for (final element in elements) {
+      if (element is! StrokeElement && element is! ShapeElement) continue;
+      if (!_isInCurrentView(element)) continue;
 
-      // If eraser area doesn't even touch the element's box, skip it
-      if (!eraserBox.overlaps(visualBounds)) continue;
+      // Fast spatial filter (raw points ke saath match karta hai)
+      if (!eraserBox.overlaps(element.getRawBounds().inflate(1.0))) continue;
 
       if (element is StrokeElement) {
-        List<List<Offset>> segments = _splitStrokePointsSegment(element.points, p1, p2, radius);
+        final segments = _splitStroke(element.points, p1, p2, radiusSq);
+        if (segments == null) continue; // kuch touch nahi hua
 
-        if (segments.length != 1 || segments[0].length != element.points.length) {
-          toRemove.add(element);
-          for (var seg in segments) {
+        final List<BoardElement> pieces = [];
+        for (final seg in segments) {
+          if (seg.length > 1) {
+            pieces.add(
+              element.copyWith(
+                id: const Uuid().v4(),
+                points: seg,
+                position: seg.first,
+                docPage: _isDocumentOverlayOpen ? _overlayCurrentPage : element.docPage,
+              ),
+            );
+          }
+        }
+        replacements[element.id] = pieces;
+      } else if (element is ShapeElement) {
+        if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
+          final linePoints = _interpolatePoints(element.position, element.endPoint);
+          final segments = _splitStroke(linePoints, p1, p2, radiusSq);
+          if (segments == null) continue;
+
+          final List<BoardElement> pieces = [];
+          for (final seg in segments) {
             if (seg.length > 1) {
-              toAdd.add(
-                element.copyWith(
+              pieces.add(
+                StrokeElement(
                   id: const Uuid().v4(),
-                  points: seg,
                   position: seg.first,
-                  docPage: _isDocumentOverlayOpen ? _overlayCurrentPage : element.docPage,
+                  points: seg,
+                  color: element.color,
+                  strokeWidth: element.strokeWidth,
+                  docPage: element.docPage,
                 ),
               );
             }
           }
-          changed = true;
-        }
-      } else if (element is ShapeElement) {
-        if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
-          if (_distToSegment(position, element.position, element.endPoint) < radius ||
-              _distToSegment(p1, element.position, element.endPoint) < radius) {
-            toRemove.add(element);
-            List<Offset> linePoints = _interpolatePoints(element.position, element.endPoint);
-            List<List<Offset>> segments = _splitStrokePointsSegment(linePoints, p1, p2, radius);
-            for (var seg in segments) {
-              if (seg.length > 1) {
-                toAdd.add(
-                  StrokeElement(
-                    id: const Uuid().v4(),
-                    position: seg.first,
-                    points: seg,
-                    color: element.color,
-                    strokeWidth: element.strokeWidth,
-                  ),
-                );
-              }
-            }
-            changed = true;
-          }
+          replacements[element.id] = pieces;
         } else {
-          final rect = Rect.fromPoints(element.position, element.endPoint);
-          if (rect.inflate(radius).contains(position) || rect.inflate(radius).contains(p1)) {
-            toRemove.add(element);
-            changed = true;
+          samples ??= _sweepSamples(p1, p2, radius);
+          final inflated = Rect.fromPoints(element.position, element.endPoint).inflate(radius);
+          bool hit = false;
+          for (final s in samples) {
+            if (inflated.contains(s)) {
+              hit = true;
+              break;
+            }
           }
+          if (hit) replacements[element.id] = const [];
         }
       }
     }
 
-    if (changed) {
-      for (var e in toRemove) {
-        currentPage.elements.removeWhere((x) => x.id == e.id);
+    if (replacements.isEmpty) return; // kuch nahi hua: no rebuild, no repaint
+
+    // Order preserve karte hue ek hi baar me list rebuild
+    final List<BoardElement> rebuilt = [];
+    for (final e in elements) {
+      final r = replacements[e.id];
+      if (r == null) {
+        rebuilt.add(e);
+      } else {
+        rebuilt.addAll(r);
       }
-      currentPage.elements.addAll(toAdd);
-      _notify();
     }
+    elements
+      ..clear()
+      ..addAll(rebuilt);
+
+    _notify(); // poore erase call ke liye sirf ek notify
   }
 
-  List<List<Offset>> _splitStrokePointsSegment(List<Offset> points, Offset segA, Offset segB, double radius) {
-    if (points.isEmpty) return [];
+  /// Points ko eraser capsule (p1->p2, radius) ke hisaab se todta hai.
+  /// Agar koi point capsule ke andar nahi hai to null return karta hai (koi change nahi).
+  List<List<Offset>>? _splitStroke(List<Offset> points, Offset a, Offset b, double radiusSq) {
+    if (points.isEmpty) return null;
 
-    List<List<Offset>> result = [];
-    List<Offset>? currentSegment;
+    final double vx = b.dx - a.dx;
+    final double vy = b.dy - a.dy;
+    final double l2 = vx * vx + vy * vy;
 
-    final double radiusSq = radius * radius;
+    bool inside(Offset p) {
+      if (l2 == 0.0) {
+        final dx = p.dx - a.dx;
+        final dy = p.dy - a.dy;
+        return dx * dx + dy * dy < radiusSq;
+      }
+      double t = ((p.dx - a.dx) * vx + (p.dy - a.dy) * vy) / l2;
+      t = t.clamp(0.0, 1.0);
+      final dx = p.dx - (a.dx + t * vx);
+      final dy = p.dy - (a.dy + t * vy);
+      return dx * dx + dy * dy < radiusSq;
+    }
+
+    int first = -1;
+    for (int i = 0; i < points.length; i++) {
+      if (inside(points[i])) {
+        first = i;
+        break;
+      }
+    }
+    if (first == -1) return null;
+
+    final List<List<Offset>> result = [];
+    List<Offset>? current;
 
     for (int i = 0; i < points.length; i++) {
       final p = points[i];
-      bool inside = _distToSegmentSquared(p, segA, segB) < radiusSq;
-
-      if (inside) {
-        if (currentSegment != null && currentSegment.isNotEmpty) {
-          result.add(currentSegment);
-          currentSegment = null;
+      if (i >= first && inside(p)) {
+        if (current != null && current.isNotEmpty) {
+          result.add(current);
+          current = null;
         }
       } else {
-        currentSegment ??= [];
-        currentSegment.add(p);
+        current ??= [];
+        current.add(p);
       }
     }
-
-    if (currentSegment != null && currentSegment.isNotEmpty) {
-      result.add(currentSegment);
+    if (current != null && current.isNotEmpty) {
+      result.add(current);
     }
     return result;
   }
 
-  double _distToSegmentSquared(Offset p, Offset v, Offset w) {
-    double l2 = (v - w).distanceSquared;
-    if (l2 == 0.0) return (p - v).distanceSquared;
-    double t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
-    t = t.clamp(0.0, 1.0);
-    final proj = Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy));
-    return (p - proj).distanceSquared;
+  /// p1 -> p2 ke beech ke sample points (shapes ke liye, taaki lambi sweep me gap na rahe).
+  List<Offset> _sweepSamples(Offset p1, Offset p2, double radius) {
+    final double dist = (p2 - p1).distance;
+    if (dist <= 0.0) return [p1];
+    final int steps = max(1, (dist / (radius * 0.5)).ceil());
+    return [for (int i = 0; i <= steps; i++) Offset.lerp(p1, p2, i / steps)!];
   }
 
   List<Offset> _interpolatePoints(Offset start, Offset end) {
-    List<Offset> points = [];
-    double dist = (end - start).distance;
-    int steps = (dist / 2).ceil();
-    for (int i = 0; i <= steps; i++) {
-      points.add(Offset.lerp(start, end, i / steps)!);
-    }
-    return points;
+    final double dist = (end - start).distance;
+    final int steps = max(1, (dist / 2).ceil());
+    return [for (int i = 0; i <= steps; i++) Offset.lerp(start, end, i / steps)!];
   }
 
   void _executeCommand(Command command) {
@@ -787,6 +1130,7 @@ class WhiteboardProvider extends ChangeNotifier {
       _currentPageIndex = startIndex;
     }
 
+    _canvasPanOffset = Offset.zero;
     _undoStack.clear();
     _redoStack.clear();
     clearSelection();
@@ -796,6 +1140,7 @@ class WhiteboardProvider extends ChangeNotifier {
   void addPage() {
     _pages.add(BoardPage(id: const Uuid().v4(), elements: []));
     _currentPageIndex = _pages.length - 1;
+    _canvasPanOffset = Offset.zero;
     _undoStack.clear();
     _redoStack.clear();
     _notify();
@@ -807,38 +1152,60 @@ class WhiteboardProvider extends ChangeNotifier {
     if (_currentPageIndex >= _pages.length) {
       _currentPageIndex = _pages.length - 1;
     }
+    _canvasPanOffset = Offset.zero;
+    clearSelection();
     _notify();
   }
 
   void switchPage(int index) {
     _currentPageIndex = index;
+    _canvasPanOffset = Offset.zero;
     clearSelection();
     _notify();
   }
 
-  // Hit Testing
   BoardElement? hitTest(Offset localPosition, {double threshold = 25.0}) {
     for (var element in currentPage.elements.reversed) {
-      if (_isDocumentOverlayOpen && element.docPage != _overlayCurrentPage) continue;
+      if (!_isInCurrentView(element)) continue;
+
       if (element is StrokeElement) {
         for (var point in element.points) {
           if ((point - localPosition).distance < threshold) return element;
         }
       } else if (element is ShapeElement) {
         if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
-          if (_distToSegment(localPosition, element.position, element.endPoint) < threshold) {
-            return element;
-          }
+          if (_distToSegment(localPosition, element.position, element.endPoint) < threshold) return element;
         } else {
           final rect = Rect.fromPoints(element.position, element.endPoint);
           if (rect.inflate(threshold / 2).contains(localPosition)) return element;
         }
-      } else if (element is ImageElement) {
-        final rect = element.getRawBounds();
-        if (rect.contains(localPosition)) return element;
+      } else if (element is MindMapElement) {
+        final local = _toElementLocal(element, localPosition)- element.position;
+        if (element.nodeAt(local, inflate: 8) != null) return element;
+      } else if (element is ImageElement ||
+          element is DocumentElement ||
+          element is TableElement ||
+          element is TextElement) {
+        final local = _toElementLocal(element, localPosition) - element.position;
+        final raw = element.getRawBounds();
+        if ((Offset.zero & raw.size).inflate(6).contains(local)) return element;
       }
     }
     return null;
+  }
+
+  /// Point ko element ke rotation/scale ke hisaab se element-space me laata hai
+  /// (canvas ke _mmLocal jaisa hi).
+  Offset _toElementLocal(BoardElement el, Offset p) {
+    var q = p;
+    if (el.rotation != 0 || el.scale != 1.0) {
+      final c = el.getRawBounds().center;
+      final d = q - c;
+      final cosA = cos(-el.rotation);
+      final sinA = sin(-el.rotation);
+      q = c + Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) / el.scale;
+    }
+    return q;
   }
 
   double _distToSegment(Offset p, Offset v, Offset w) {
@@ -879,13 +1246,13 @@ class WhiteboardProvider extends ChangeNotifier {
             }
 
             element.size = Size(newW, newH);
-            element.position = Offset((screenSize.width - newW) / 2, (screenSize.height - newH) / 2);
+            element.position = Offset((screenSize.width - newW) / 2, (screenSize.height - newH) / 2)- _canvasPanOffset;
             _fullScreenImages.add(elementId);
           } else {
             final defSize = _defaultImageSizes[elementId];
             if (defSize != null) {
               element.size = defSize;
-              element.position = Offset((screenSize.width - defSize.width) / 2, (screenSize.height - defSize.height) / 2);
+              element.position = Offset((screenSize.width - defSize.width) / 2, (screenSize.height - defSize.height) / 2)- _canvasPanOffset;
             }
             _fullScreenImages.remove(elementId);
           }
@@ -966,7 +1333,7 @@ class WhiteboardProvider extends ChangeNotifier {
     }
 
     String contentText = contentBuffer.toString().trim();
-    
+
     // If no slide images or documents were found, but canvasKey is available, capture the current canvas (freehand writing/drawings)!
     if (imagePaths.isEmpty && canvasKey != null) {
       final canvasImagePath = await BoardStorageService().captureCanvasToTempFile(canvasKey!);
@@ -999,5 +1366,17 @@ class WhiteboardProvider extends ChangeNotifier {
     _aiResultText = result;
     _isAiLoading = false;
     _notify();
+  }
+
+
+  /// Naya element ko abhi screen par jo dikh raha hai uske center me rakhta hai.
+  /// Table, MindMap, Image, PPT/PDF, Text, Shape sab ke liye chalta hai.
+  void addElementCenteredInView(BoardElement el, Size viewport) {
+    final target = viewportCenterOnCanvas(viewport);
+    final delta = target - el.getRawBounds().center;
+    el.position += delta;
+    _updateInternalPoints(el, delta); // stroke/shape ke points bhi shift
+    el.invalidateBounds();
+    addElement(el);
   }
 }

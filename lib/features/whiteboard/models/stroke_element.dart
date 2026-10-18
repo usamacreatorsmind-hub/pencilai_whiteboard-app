@@ -59,10 +59,10 @@ class StrokeElement extends BoardElement {
   void _recomputeWidths() {
     final n = points.length;
     if (n == 0) {
-      _cachedWidths = const [];
+      _cachedWidths = <double>[];
       return;
     }
-    _cachedWidths = List<double>.filled(n, strokeWidth);
+    _cachedWidths = List<double>.filled(n, strokeWidth, growable: true);
     if (penType == PenType.fountainPen && n >= 2) {
       const double nibAngle = -0.610865; // -35 degrees in radians
       for (var i = 0; i < n; i++) {
@@ -81,19 +81,31 @@ class StrokeElement extends BoardElement {
 
         final double angle = atan2(dy, dx);
         final double angleDiff = (sin(angle - nibAngle)).abs();
-        _cachedWidths![i] = strokeWidth * (0.55 + 0.75 * angleDiff);
+
+        // Refined smooth interpolation for both thin and thick sides (using threshold response curve)
+        // Thin side (angleDiff near 0): graceful thin stroke (0.4x)
+        // Thick side (angleDiff near 1): bold rich thick stroke (1.5x)
+        final double smoothFactor = 0.4 + 1.1 * pow(angleDiff, 1.3);
+        _cachedWidths![i] = strokeWidth * smoothFactor.clamp(0.3, 2.2);
       }
 
-      for (var i = 1; i < n; i++) {
-        _cachedWidths![i] = _cachedWidths![i - 1] * 0.5 + _cachedWidths![i] * 0.5;
+      // Multi-pass weighted smoothing for buttery smooth thin-to-thick and thick-to-thin transitions
+      for (int pass = 0; pass < 2; pass++) {
+        final tempWidths = List<double>.from(_cachedWidths!);
+        for (var i = 1; i < n - 1; i++) {
+          _cachedWidths![i] = (tempWidths[i - 1] + tempWidths[i] * 2.0 + tempWidths[i + 1]) / 4.0;
+        }
       }
     }
   }
 
   void _appendWidthForNewPoint() {
-    _cachedWidths ??= [];
     final n = points.length;
     if (n == 0) return;
+    if (_cachedWidths == null || _cachedWidths!.length != n - 1) {
+      _recomputeWidths();
+      return;
+    }
     if (_cachedWidths!.isEmpty) {
       _cachedWidths!.add(strokeWidth);
       return;
@@ -107,9 +119,11 @@ class StrokeElement extends BoardElement {
       final dy = pCurr.dy - pPrev.dy;
       final double angle = atan2(dy, dx);
       final double angleDiff = (sin(angle - nibAngle)).abs();
-      final double rawW = strokeWidth * (0.55 + 0.75 * angleDiff);
+      final double smoothFactor = 0.4 + 1.1 * pow(angleDiff, 1.3);
+      final double rawW = strokeWidth * smoothFactor.clamp(0.3, 2.2);
       final double prevW = _cachedWidths!.last;
-      _cachedWidths!.add(prevW * 0.5 + rawW * 0.5);
+      // Weighted blending for real-time live smoothness on both sides
+      _cachedWidths!.add(prevW * 0.35 + rawW * 0.65);
     } else {
       _cachedWidths!.add(strokeWidth);
     }
@@ -145,13 +159,22 @@ class StrokeElement extends BoardElement {
       final last = points.last;
       final dx = p.dx - last.dx;
       final dy = p.dy - last.dy;
-      // Filter out duplicate hardware events (< 0.2px squared distance)
-      if (dx * dx + dy * dy < 0.2) return false;
+      // Adaptive distance thresholding for jitter reduction on both thin and thick strokes
+      final double minDistSq = strokeWidth > 4.0 ? 0.6 : 0.15;
+      if (dx * dx + dy * dy < minDistSq) return false;
     }
-    points.add(p);
+
+    // Smooth incoming point with moving average against last point for ultra-smooth curve geometry
+    Offset smoothedPoint = p;
+    if (points.isNotEmpty) {
+      final last = points.last;
+      smoothedPoint = Offset(last.dx * 0.2 + p.dx * 0.8, last.dy * 0.2 + p.dy * 0.8);
+    }
+
+    points.add(smoothedPoint);
     _appendWidthForNewPoint();
 
-    // O(1) Incremental Path Appending
+    // O(1) Incremental Path Appending with Quadratic Bezier
     if (_cachedPath == null) {
       _cachedPath = Path()..moveTo(points[0].dx, points[0].dy);
       if (points.length == 2) {

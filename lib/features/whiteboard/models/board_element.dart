@@ -4,6 +4,9 @@ import 'stroke_element.dart';
 import 'shape_element.dart';
 import 'image_element.dart';
 import 'document_element.dart';
+import 'text_element.dart';
+import 'table_element.dart';
+import 'mind_map_element.dart';
 
 abstract class BoardElement {
   final String id;
@@ -35,6 +38,12 @@ abstract class BoardElement {
         return ImageElement.fromJson(json);
       case 'document':
         return DocumentElement.fromJson(json);
+      case 'text':
+        return TextElement.fromJson(json);
+      case 'table':
+        return TableElement.fromJson(json);
+      case 'mindmap':
+        return MindMapElement.fromJson(json);
       default:
         throw Exception('Unknown BoardElement type: $type');
     }
@@ -72,6 +81,15 @@ abstract class BoardElement {
     } else if (this is DocumentElement) {
       final doc = this as DocumentElement;
       bounds = Rect.fromLTWH(doc.position.dx, doc.position.dy, doc.size.width, doc.size.height);
+    } else if (this is TextElement) {
+      final txt = this as TextElement;
+      bounds = Rect.fromLTWH(txt.position.dx, txt.position.dy, txt.size.width, txt.size.height);
+    } else if (this is TableElement) {
+      final tbl = this as TableElement;
+      bounds = Rect.fromLTWH(tbl.position.dx, tbl.position.dy, tbl.size.width, tbl.size.height);
+    } else if (this is MindMapElement) {
+      final mm = this as MindMapElement;
+      bounds = Rect.fromLTWH(mm.position.dx, mm.position.dy, mm.size.width, mm.size.height);
     } else {
       bounds = Rect.fromLTWH(position.dx, position.dy, 100, 100);
     }

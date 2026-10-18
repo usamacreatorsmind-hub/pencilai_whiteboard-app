@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../models/document_element.dart';
+import '../models/image_element.dart';
+import '../models/mind_map_element.dart';
+import '../services/ai_service.dart';
+import '../services/board_storage_service.dart';
+import '../services/smart_writing_service.dart';
 import '../state/whiteboard_provider.dart';
+import 'translation_dialog.dart';
 
 class ObjectHandles extends StatefulWidget {
   const ObjectHandles({super.key});
@@ -13,8 +21,110 @@ class ObjectHandles extends StatefulWidget {
 class _ObjectHandlesState extends State<ObjectHandles> {
   double _lastScale = 1.0;
   double _lastRotation = 0.0;
+  bool _showColorPalette = false;
 
   static const Color handleAccent = Color(0xFF00C8AC); // Vibrant Cyan / Teal matching Reference UI
+
+  bool _isPeriodicTableSelected(WhiteboardProvider provider) {
+    final selectedIds = provider.selectedElementIds;
+    for (final el in provider.currentPage.elements) {
+      if (selectedIds.contains(el.id)) {
+        if (el is ImageElement && (el.imageUrl.contains('periodic_table') || el.imageUrl.contains('periodic-table'))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool _isMindMapSelected(WhiteboardProvider provider) {
+    final selectedIds = provider.selectedElementIds;
+    for (final el in provider.currentPage.elements) {
+      if (selectedIds.contains(el.id) && el is MindMapElement) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Widget _buildDivider() {
+    return Container(height: 18, width: 1, color: Colors.white.withValues(alpha: 0.2), margin: const EdgeInsets.symmetric(horizontal: 2));
+  }
+
+  bool _isSearching = false;
+  bool _isConvertingSmartWriting = false;
+
+  Future<void> _triggerSmartWriting(BuildContext context, WhiteboardProvider provider) async {
+    if (_isConvertingSmartWriting) return;
+    setState(() => _isConvertingSmartWriting = true);
+
+    try {
+      await SmartWritingService().convertSelectedStrokesToText(provider);
+    } catch (e) {
+      debugPrint('Smart writing error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isConvertingSmartWriting = false);
+      }
+    }
+  }
+
+  Future<void> _directSearchInChrome(BuildContext context, WhiteboardProvider provider) async {
+    if (_isSearching) return;
+    setState(() => _isSearching = true);
+
+    try {
+      String query = '';
+      final selectedIds = provider.selectedElementIds;
+      final selectedElements = provider.currentPage.elements.where((e) => selectedIds.contains(e.id)).toList();
+      for (var el in selectedElements) {
+        if (el is DocumentElement) {
+          query = el.fileName.split('.').first;
+          break;
+        }
+      }
+
+      if (query.isEmpty && selectedElements.isNotEmpty) {
+        final imagePath = await BoardStorageService().captureSelectedElementsImage(selectedElements);
+        if (imagePath != null) {
+          final recognized = await AiService().recognizeHandwriting(imagePath);
+          if (!mounted) return;
+          if (recognized.isNotEmpty && !recognized.startsWith('Error') && !recognized.startsWith('⚠️')) {
+            query = recognized;
+          }
+        }
+      }
+
+      if (query.isEmpty) {
+        query = 'Selected Notes';
+      }
+
+      query = query.replaceAll('\n', ' ').trim();
+
+      if (!mounted) return;
+      if (query.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Searching for: "$query"'),
+            backgroundColor: const Color(0xFF0D9488),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+
+      final encoded = Uri.encodeComponent(query);
+      final uri = Uri.parse('https://www.google.com/search?q=$encoded');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('Search error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isSearching = false);
+      }
+    }
+  }
 
   void _showAiSelectionMenu(BuildContext context, WhiteboardProvider provider) {
     showModalBottomSheet(
@@ -112,7 +222,7 @@ class _ObjectHandlesState extends State<ObjectHandles> {
       }
     }
 
-    final rect = groupRect;
+    final rect = groupRect.shift(provider.canvasPanOffset);
     const padding = 10.0;
     const cornerHandleSize = 18.0;
     const stemHeight = 28.0;
@@ -190,7 +300,8 @@ class _ObjectHandlesState extends State<ObjectHandles> {
             color: handleAccent,
             size: cornerHandleSize,
             onPanUpdate: (d) {
-              final center = rect.center;
+              final box = context.findRenderObject() as RenderBox;
+              final center = box.localToGlobal(rect.center);
               final oldDir = (d.globalPosition - d.delta - center).direction;
               final newDir = (d.globalPosition - center).direction;
               provider.updateElementTransform(Offset.zero, newDir - oldDir, 0);
@@ -200,43 +311,213 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           ),
         ),
 
-        // 5. Delete Action Handle (Top-Right Offset)
+        // Bottom Action Tile (Search, Color Picker, Delete, AI Assist)
         Positioned(
-          left: boxRight + 8,
-          top: boxTop - 12,
-          child: GestureDetector(
-            onTap: () => provider.removeSelectedElements(),
-            child: Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.redAccent, width: 1.5),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.20), blurRadius: 4, offset: const Offset(0, 2))],
-              ),
-              child: const Icon(LucideIcons.trash2, color: Colors.redAccent, size: 14),
+          left: boxCenterX - (_showColorPalette ? 160 : (_isPeriodicTableSelected(provider) ? 45 : 90)),
+          top: boxBottom + 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.2),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
             ),
-          ),
-        ),
-
-        // 6. AI Assist Action Handle (Top-Right Offset next to Delete)
-        Positioned(
-          left: boxRight + 40,
-          top: boxTop - 12,
-          child: GestureDetector(
-            onTap: () => _showAiSelectionMenu(context, provider),
-            child: Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF8B5CF6), width: 1.5),
-                boxShadow: [BoxShadow(color: const Color(0xFF8B5CF6).withValues(alpha: 0.30), blurRadius: 6, offset: const Offset(0, 2))],
-              ),
-              child: const Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 14),
-            ),
+            child: _showColorPalette
+                ? Container(
+                    constraints: const BoxConstraints(maxWidth: 320),
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final color in [
+                            Colors.black,
+                            Colors.white,
+                            Colors.redAccent,
+                            const Color(0xFFEC4899), // Pink
+                            const Color(0xFF8B5CF6), // Purple
+                            const Color(0xFF3B82F6), // Blue
+                            const Color(0xFF38BDF8), // Sky Cyan
+                            const Color(0xFF10B981), // Emerald Green
+                            const Color(0xFFF59E0B), // Amber / Yellow
+                            const Color(0xFFF97316), // Orange
+                          ])
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              child: GestureDetector(
+                                onTap: () {
+                                  provider.updateSelectedElementsColor(color);
+                                  setState(() => _showColorPalette = false);
+                                },
+                                child: Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: color == Colors.white ? Colors.black26 : Colors.white, width: 2),
+                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4)],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () => setState(() => _showColorPalette = false),
+                            child: Container(
+                              padding: const EdgeInsets.all(4.0),
+                              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), shape: BoxShape.circle),
+                              child: const Icon(LucideIcons.x, color: Colors.white70, size: 16),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : _isMindMapSelected(provider)
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Delete Button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => provider.removeSelectedElements(),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : _isPeriodicTableSelected(provider)
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 1. Delete Button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => provider.removeSelectedElements(),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                          ),
+                        ),
+                      ),
+                      _buildDivider(),
+                      // 2. AI Assist Button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _showAiSelectionMenu(context, provider),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 1. Smart Writing Button (Handwriting-to-Text)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _isConvertingSmartWriting ? null : () => _triggerSmartWriting(context, provider),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: _isConvertingSmartWriting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF10B981)),
+                                  )
+                                : const Icon(LucideIcons.wand2, color: Color(0xFF10B981), size: 20),
+                          ),
+                        ),
+                      ),
+                      _buildDivider(),
+                      // 2. Search Button (Direct AI Handwriting OCR Search in Chrome)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _isSearching ? null : () => _directSearchInChrome(context, provider),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: _isSearching
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                                  )
+                                : const Icon(LucideIcons.search, color: Color(0xFF38BDF8), size: 20),
+                          ),
+                        ),
+                      ),
+                      _buildDivider(),
+                      // 3. Translate Button (Multi-Language AI & On-Device Translation)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => TranslationDialog.show(context, provider),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.languages, color: Color(0xFF2DD4BF), size: 20),
+                          ),
+                        ),
+                      ),
+                      _buildDivider(),
+                      // 4. Change Color Button (Toggles 10-color palette)
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => setState(() => _showColorPalette = true),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.palette, color: Color(0xFFF59E0B), size: 20),
+                          ),
+                        ),
+                      ),
+                      _buildDivider(),
+                      // 3. Delete Button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => provider.removeSelectedElements(),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                          ),
+                        ),
+                      ),
+                      _buildDivider(),
+                      // 4. AI Assist Button
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _showAiSelectionMenu(context, provider),
+                          borderRadius: BorderRadius.circular(14),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         ),
 

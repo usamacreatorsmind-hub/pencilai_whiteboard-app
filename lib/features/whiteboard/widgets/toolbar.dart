@@ -1,23 +1,32 @@
 import 'dart:io';
-
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdfx/pdfx.dart';
 import 'package:uuid/uuid.dart';
 import '../state/whiteboard_provider.dart';
-import '../models/board_page.dart';
 import '../models/shape_element.dart';
 import '../models/image_element.dart';
-import '../models/document_element.dart';
 import '../models/stroke_element.dart';
+import '../models/table_element.dart';
+import '../models/mind_map_element.dart';
 import '../services/document_import_service.dart';
 import '../services/ppt_conversion_service.dart';
+import 'table_picker_dialog.dart';
 
 class WhiteboardToolbar extends StatelessWidget {
-  const WhiteboardToolbar({super.key});
+  final VoidCallback? onOpenRuler;
+  final VoidCallback? onOpenProtractor;
+  final VoidCallback? onOpenSetSquare;
+  final VoidCallback? onOpenCompass;
+
+  const WhiteboardToolbar({super.key, this.onOpenRuler, this.onOpenProtractor, this.onOpenSetSquare, this.onOpenCompass});
 
   void _showColorPicker(BuildContext context, WhiteboardProvider provider) {
     showDialog(
@@ -156,179 +165,578 @@ class WhiteboardToolbar extends StatelessWidget {
     );
   }
 
+  static final GlobalKey _penButtonKey = GlobalKey();
+
   void _showPenSettings(BuildContext context, WhiteboardProvider provider) {
-    showDialog(
+    final RenderBox? renderBox = _penButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    Offset position = Offset.zero;
+    Size buttonSize = Size.zero;
+    if (renderBox != null) {
+      position = renderBox.localToGlobal(Offset.zero);
+      buttonSize = renderBox.size;
+    }
+
+    showGeneralDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          contentPadding: EdgeInsets.zero,
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          content: Container(
-            width: 340,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Pen Style', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 8),
-                // Pen Type Selector (Compact Row)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _PenTypeOption(
-                      label: 'Pen',
-                      icon: LucideIcons.pencil,
-                      color: Colors.blue,
-                      isSelected: provider.currentPenType == PenType.pen,
-                      onTap: () {
-                        provider.setPenType(PenType.pen);
-                        setDialogState(() {});
-                      },
-                    ),
-                    _PenTypeOption(
-                      label: 'Fountain',
-                      icon: LucideIcons.penTool,
-                      color: Colors.purple,
-                      isSelected: provider.currentPenType == PenType.fountainPen,
-                      onTap: () {
-                        provider.setPenType(PenType.fountainPen);
-                        setDialogState(() {});
-                      },
-                    ),
-                    _PenTypeOption(
-                      label: 'Brush',
-                      icon: LucideIcons.paintbrush,
-                      color: Colors.orange,
-                      isSelected: provider.currentPenType == PenType.brush,
-                      onTap: () {
-                        provider.setPenType(PenType.brush);
-                        setDialogState(() {});
-                      },
-                    ),
-                    _PenTypeOption(
-                      label: 'Marker',
-                      icon: LucideIcons.highlighter,
-                      color: Colors.green,
-                      isSelected: provider.currentPenType == PenType.marker,
-                      onTap: () {
-                        provider.setPenType(PenType.marker);
-                        setDialogState(() {});
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Thickness', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    Text(
-                      '${provider.strokeWidth.toInt()}px',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blue),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                // Size Slider
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: provider.currentColor,
-                    thumbColor: provider.currentColor,
-                    overlayColor: provider.currentColor.withOpacity(0.2),
-                    trackHeight: 4,
-                  ),
-                  child: Slider(
-                    value: provider.strokeWidth.clamp(provider.minStrokeWidth, provider.maxStrokeWidth),
-                    min: provider.minStrokeWidth,
-                    max: provider.maxStrokeWidth,
-                    onChanged: (value) {
-                      provider.setStrokeWidth(value);
-                      setDialogState(() {});
-                    },
-                  ),
-                ),
-                // Realtime Thickness Preview
-                Container(
-                  height: 36,
-                  width: double.infinity,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
+      barrierDismissible: true,
+      barrierLabel: 'PenSettingsOverlay',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        const double dialogWidth = 330.0;
+        const double dialogHeight = 265.0;
+
+        final screenSize = MediaQuery.of(context).size;
+        double left = position.dx + (buttonSize.width / 2) - (dialogWidth / 2) + 35.0;
+        left = left.clamp(12.0, screenSize.width - dialogWidth - 12.0);
+        double top = position.dy - dialogHeight + 10.0;
+        if (top < 12.0) top = 12.0;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: top,
+              child: Material(
+                color: Colors.transparent,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.85, end: 1.0),
+                  duration: const Duration(milliseconds: 150),
+                  builder: (context, scale, child) {
+                    return Transform.scale(scale: scale, alignment: Alignment.bottomCenter, child: child);
+                  },
                   child: Container(
-                    height: provider.strokeWidth.clamp(1.0, 28.0),
-                    width: 140,
+                    width: dialogWidth,
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                     decoration: BoxDecoration(
-                      color: provider.currentColor.value == Colors.white.value ? Colors.grey[800] : provider.currentColor,
-                      borderRadius: BorderRadius.circular(provider.strokeWidth / 2),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 16, spreadRadius: 1, offset: const Offset(0, 4)),
+                      ],
+                    ),
+                    child: StatefulBuilder(
+                      builder: (context, setDialogState) {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 1. Dual-Nib Top TabBar
+                            Container(
+                              height: 34,
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _PenProfileTab(
+                                      title: 'Thin Pen',
+                                      subtitle: '${provider.thinStrokeWidth.toInt()}px',
+                                      color: provider.thinColor,
+                                      isSelected: provider.activePenProfile == PenProfile.thin,
+                                      onTap: () {
+                                        provider.setActivePenProfile(PenProfile.thin);
+                                        setDialogState(() {});
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: _PenProfileTab(
+                                      title: 'Thick Pen',
+                                      subtitle: '${provider.thickStrokeWidth.toInt()}px',
+                                      color: provider.thickColor,
+                                      isSelected: provider.activePenProfile == PenProfile.thick,
+                                      onTap: () {
+                                        provider.setActivePenProfile(PenProfile.thick);
+                                        setDialogState(() {});
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // 2. Compact Pen Style Selector
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _PenTypeOption(
+                                  label: 'Pen',
+                                  icon: LucideIcons.pencil,
+                                  color: Colors.blue,
+                                  isSelected: provider.currentPenType == PenType.pen,
+                                  onTap: () {
+                                    provider.setPenType(PenType.pen);
+                                    setDialogState(() {});
+                                  },
+                                ),
+                                _PenTypeOption(
+                                  label: 'Fountain',
+                                  icon: LucideIcons.penTool,
+                                  color: Colors.purple,
+                                  isSelected: provider.currentPenType == PenType.fountainPen,
+                                  onTap: () {
+                                    provider.setPenType(PenType.fountainPen);
+                                    setDialogState(() {});
+                                  },
+                                ),
+                                _PenTypeOption(
+                                  label: 'Brush',
+                                  icon: LucideIcons.paintbrush,
+                                  color: Colors.orange,
+                                  isSelected: provider.currentPenType == PenType.brush,
+                                  onTap: () {
+                                    provider.setPenType(PenType.brush);
+                                    setDialogState(() {});
+                                  },
+                                ),
+                                _PenTypeOption(
+                                  label: 'Marker',
+                                  icon: LucideIcons.highlighter,
+                                  color: Colors.green,
+                                  isSelected: provider.currentPenType == PenType.marker,
+                                  onTap: () {
+                                    provider.setPenType(PenType.marker);
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // 3. Compact Thickness Slider & Preview
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Thickness',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF334155)),
+                                ),
+                                Text(
+                                  '${provider.strokeWidth.toInt()}px',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.blue),
+                                ),
+                              ],
+                            ),
+                            SizedBox(
+                              height: 26,
+                              child: SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  activeTrackColor: provider.currentColor,
+                                  thumbColor: provider.currentColor,
+                                  overlayColor: provider.currentColor.withValues(alpha: 0.2),
+                                  trackHeight: 3,
+                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                ),
+                                child: Slider(
+                                  value: provider.strokeWidth.clamp(provider.minStrokeWidth, provider.maxStrokeWidth),
+                                  min: provider.minStrokeWidth,
+                                  max: provider.maxStrokeWidth,
+                                  onChanged: (value) {
+                                    provider.setStrokeWidth(value);
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              ),
+                            ),
+                            Container(
+                              height: 18,
+                              width: double.infinity,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Container(
+                                height: provider.strokeWidth.clamp(1.0, 14.0),
+                                width: 100,
+                                decoration: BoxDecoration(
+                                  color: provider.currentColor.value == Colors.white.value
+                                      ? const Color(0xFF1E293B)
+                                      : provider.currentColor,
+                                  borderRadius: BorderRadius.circular(provider.strokeWidth / 2),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+
+                            // 4. Compact Colors Grid
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                ...[
+                                  Colors.white,
+                                  Colors.black,
+                                  Colors.red,
+                                  Colors.yellow,
+                                  Colors.orange,
+                                  Colors.brown,
+                                  Colors.lightGreen,
+                                  Colors.green,
+                                  Colors.lightBlue,
+                                  Colors.blue,
+                                  Colors.purple,
+                                ].map(
+                                  (color) => _ColorButton(
+                                    color: color,
+                                    isSelected: provider.currentColor.value == color.value,
+                                    onTap: () {
+                                      provider.setColor(color);
+                                      setDialogState(() {});
+                                    },
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => _showColorPicker(context, provider),
+                                  child: Container(
+                                    width: 25,
+                                    height: 25,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                      gradient: const LinearGradient(
+                                        colors: [Colors.red, Colors.green, Colors.blue, Colors.yellow],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                    ),
+                                    child: const Icon(Icons.colorize, size: 12, color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
-                const Text('Colors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                const SizedBox(height: 10),
-                // Color Grid (Compact)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ...[
-                      Colors.white,
-                      Colors.black,
-                      Colors.red,
-                      Colors.yellow,
-                      Colors.orange,
-                      Colors.brown,
-                      Colors.lightGreen,
-                      Colors.green,
-                      Colors.lightBlue,
-                      Colors.blue,
-                      Colors.purple,
-                    ].map(
-                      (color) => _ColorButton(
-                        color: color,
-                        isSelected: provider.currentColor.value == color.value,
-                        onTap: () {
-                          provider.setColor(color);
-                          setDialogState(() {});
-                        },
-                      ),
-                    ),
-                    // Custom Color Picker Button
-                    GestureDetector(
-                      onTap: () => _showColorPicker(context, provider),
-                      child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey[300]!),
-                          gradient: const LinearGradient(
-                            colors: [Colors.red, Colors.green, Colors.blue, Colors.yellow],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: const Icon(Icons.colorize, size: 18, color: Colors.white),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  static final GlobalKey _toolboxButtonKey = GlobalKey();
+
+  Future<void> _openPeriodicTable(BuildContext context, WhiteboardProvider provider) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final screenSize = MediaQuery.of(context).size;
+
+    try {
+      final byteData = await rootBundle.load('assets/periodic-table.pdf');
+
+      final tempDir = await getTemporaryDirectory();
+      final tempPdfPath = '${tempDir.path}/periodic_table_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final tempPdfFile = File(tempPdfPath);
+      await tempPdfFile.writeAsBytes(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+
+      final pdfDoc = await PdfDocument.openFile(tempPdfFile.path);
+      if (pdfDoc.pagesCount == 0) {
+        await pdfDoc.close();
+        throw Exception("Periodic Table PDF is empty.");
+      }
+
+      final page = await pdfDoc.getPage(1);
+      final pageImage = await page.render(width: page.width * 3.0, height: page.height * 3.0, format: PdfPageImageFormat.png);
+      await page.close();
+      await pdfDoc.close();
+
+      if (pageImage != null && pageImage.bytes.isNotEmpty) {
+        final imagePath = '${tempDir.path}/periodic_table_rendered_${DateTime.now().millisecondsSinceEpoch}.png';
+        final imageFile = File(imagePath);
+        await imageFile.writeAsBytes(pageImage.bytes);
+
+        double natWidth = (pageImage.width ?? 1920).toDouble();
+        double natHeight = (pageImage.height ?? 1080).toDouble();
+        double aspectRatio = natWidth > 0 && natHeight > 0 ? natWidth / natHeight : (16.0 / 9.0);
+
+        double targetWidth = screenSize.width * 0.7;
+        double targetHeight = targetWidth / aspectRatio;
+
+        if (targetHeight > screenSize.height * 0.75) {
+          targetHeight = screenSize.height * 0.75;
+          targetWidth = targetHeight * aspectRatio;
+        }
+
+        final Offset centerPosition = provider.screenToCanvas(Offset((screenSize.width - targetWidth) / 2, (screenSize.height - targetHeight) / 2));
+
+        final element = ImageElement(
+          id: const Uuid().v4(),
+          position: centerPosition,
+          imageUrl: imagePath,
+          size: Size(targetWidth, targetHeight),
+        );
+
+        provider.addElement(element);
+        provider.selectElement(element.id);
+        provider.setTool(WhiteboardTool.select);
+      }
+    } catch (e) {
+      debugPrint("Error opening Periodic Table PDF: $e");
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text('Failed to load Periodic Table PDF: $e'),
+          duration: const Duration(seconds: 3),
         ),
+      );
+    }
+  }
+
+  void _createMindMap(BuildContext context, WhiteboardProvider provider) {
+    final screenSize = MediaQuery.maybeOf(context)?.size ?? const Size(1280, 720);
+    final centerPos = provider.screenToCanvas(Offset(max(50.0, screenSize.width / 2 - 200), max(50.0, screenSize.height / 2 - 120)));
+
+    final rootNode = MindMapNode(
+      id: const Uuid().v4(),
+      text: '',
+      fillColor: const Color(0xFF00BFA5),
+      children: [
+        MindMapNode(id: const Uuid().v4(), text: '', fillColor: const Color(0xFF00BFA5)),
+        MindMapNode(id: const Uuid().v4(), text: '', fillColor: const Color(0xFF00BFA5)),
+        MindMapNode(id: const Uuid().v4(), text: '', fillColor: const Color(0xFF00BFA5)),
+      ],
+    );
+
+    final mindMapElement = MindMapElement(id: const Uuid().v4(), position: centerPos, root: rootNode, size: const Size(420, 260));
+
+    mindMapElement.updateLayout();
+
+    provider.addElement(mindMapElement);
+    provider.selectElement(mindMapElement.id);
+    provider.setTool(WhiteboardTool.select);
+  }
+
+  void _openTablePickerDialog(BuildContext context, WhiteboardProvider provider) {
+    final screenSize = MediaQuery.maybeOf(context)?.size ?? const Size(1280, 720);
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => TablePickerDialog(
+        onTableSelected: (rows, cols) {
+          const cellW = 90.0;
+          const cellH = 45.0;
+          final tblW = cols * cellW;
+          final tblH = rows * cellH;
+
+          final posX = (screenSize.width - tblW) / 2;
+          final posY = (screenSize.height - tblH) / 2;
+
+          final tableElement = TableElement(
+            id: const Uuid().v4(),
+            position: provider.screenToCanvas(Offset(posX.clamp(20.0, max(20.0, screenSize.width - tblW)), posY.clamp(20.0, max(20.0, screenSize.height - tblH)))),
+            rows: rows,
+            cols: cols,
+            size: Size(tblW, tblH),
+            color: provider.currentColor == Colors.white ? const Color(0xFF1E293B) : provider.currentColor,
+            strokeWidth: provider.strokeWidth < 2.0 ? 2.0 : provider.strokeWidth,
+          );
+
+          provider.addElement(tableElement);
+          provider.selectElement(tableElement.id);
+          provider.setTool(WhiteboardTool.select);
+        },
       ),
+    );
+  }
+
+  void _showRulerSubMenu(BuildContext context, WhiteboardProvider provider) {
+    final RenderBox? renderBox = _toolboxButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    Offset position = Offset.zero;
+    Size buttonSize = Size.zero;
+    if (renderBox != null) {
+      position = renderBox.localToGlobal(Offset.zero);
+      buttonSize = renderBox.size;
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'RulerSubMenu',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        const double dialogWidth = 260.0;
+        const double dialogHeight = 55.0;
+
+        double left = position.dx + (buttonSize.width / 2) - (dialogWidth / 2);
+        final screenSize = MediaQuery.of(context).size;
+        left = left.clamp(12.0, screenSize.width - dialogWidth - 12.0);
+        double top = position.dy - dialogHeight - 18.0;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: top,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: dialogWidth,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF64748B), width: 1.0),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 3))],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.ruler,
+                        label: 'Scale',
+                        onTap: () {
+                          Navigator.pop(context);
+                          onOpenRuler?.call();
+                        },
+                      ),
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.triangle,
+                        label: 'Protractor',
+                        onTap: () {
+                          Navigator.pop(context);
+                          onOpenProtractor?.call();
+                        },
+                      ),
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.square,
+                        label: 'Set Square',
+                        onTap: () {
+                          Navigator.pop(context);
+                          onOpenSetSquare?.call();
+                        },
+                      ),
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.compass,
+                        label: 'Compass',
+                        onTap: () {
+                          Navigator.pop(context);
+                          onOpenCompass?.call();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.92, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            alignment: Alignment.bottomCenter,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  void _showToolboxDialog(BuildContext context, WhiteboardProvider provider) {
+    final RenderBox? renderBox = _toolboxButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    Offset position = Offset.zero;
+    Size buttonSize = Size.zero;
+    if (renderBox != null) {
+      position = renderBox.localToGlobal(Offset.zero);
+      buttonSize = renderBox.size;
+    }
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'ToolboxDialog',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        const double dialogWidth = 290.0;
+        const double dialogHeight = 52.0;
+
+        double left = position.dx + (buttonSize.width / 2) - (dialogWidth / 2);
+        final screenSize = MediaQuery.of(context).size;
+        left = left.clamp(12.0, screenSize.width - dialogWidth - 12.0);
+        double top = position.dy - dialogHeight - 18.0;
+
+        return Stack(
+          children: [
+            Positioned(
+              left: left,
+              top: top,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: dialogWidth,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF64748B), width: 1.0),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 3))],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.network,
+                        label: 'MindMap',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _createMindMap(context, provider);
+                        },
+                      ),
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.atom,
+                        label: 'PeriodicTable',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openPeriodicTable(context, provider);
+                        },
+                      ),
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.ruler,
+                        label: 'Ruler',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showRulerSubMenu(context, provider);
+                        },
+                      ),
+                      _ToolboxOptionItem(
+                        icon: LucideIcons.table,
+                        label: 'Table',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openTablePickerDialog(context, provider);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.92, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            alignment: Alignment.bottomCenter,
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -412,9 +820,9 @@ class WhiteboardToolbar extends StatelessWidget {
                                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                               ),
                               child: Slider(
-                                value: provider.eraserSize,
-                                min: 10.0,
-                                max: 30.0,
+                                value: provider.eraserSize.clamp(provider.minEraserSize, provider.maxEraserSize),
+                                min: provider.minEraserSize,
+                                max: provider.maxEraserSize,
                                 onChanged: (value) {
                                   provider.setEraserSize(value);
                                   setDialogState(() {});
@@ -436,8 +844,8 @@ class WhiteboardToolbar extends StatelessWidget {
                                   border: Border.all(color: const Color(0xFFE2E8F0)),
                                 ),
                                 child: Container(
-                                  width: provider.eraserSize * 0.9,
-                                  height: provider.eraserSize * 0.9,
+                                  width: (provider.eraserSize * 0.6).clamp(10.0, 32.0),
+                                  height: (provider.eraserSize * 0.6).clamp(10.0, 32.0),
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: const LinearGradient(
@@ -454,7 +862,7 @@ class WhiteboardToolbar extends StatelessWidget {
                                     child: Icon(
                                       LucideIcons.eraser,
                                       color: const Color(0xFF64748B),
-                                      size: (provider.eraserSize * 0.4).clamp(8.0, 16.0),
+                                      size: (provider.eraserSize * 0.3).clamp(8.0, 16.0),
                                     ),
                                   ),
                                 ),
@@ -490,72 +898,71 @@ class WhiteboardToolbar extends StatelessWidget {
   void _showShapePicker(BuildContext context, WhiteboardProvider provider) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Select Shape', style: TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: 250,
-          child: GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            children: [
-              _ShapeGridButton(
-                icon: LucideIcons.minus,
-                isSelected: provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == ShapeType.line,
-                onTap: () {
-                  provider.setShapeType(ShapeType.line);
-                  provider.setTool(WhiteboardTool.shape);
-                  Navigator.pop(context);
-                },
+      builder: (context) => Align(
+        alignment: Alignment.bottomCenter,
+        child: DefaultTabController(
+          length: 2,
+          child: AlertDialog(
+            // bottom value se control karo ki kitna neeche chahiye
+            insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            contentPadding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+            titlePadding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            title: const TabBar(
+              indicatorColor: Color(0xFF38BDF8),
+              labelColor: Color(0xFF38BDF8),
+              unselectedLabelColor: Colors.grey,
+              labelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              tabs: [
+                Tab(text: '2D Shapes', icon: Icon(LucideIcons.shapes, size: 14)),
+                Tab(text: '3D Shapes', icon: Icon(LucideIcons.box, size: 14)),
+              ],
+            ),
+            content: SizedBox(
+              width: 290,
+              height: 180,
+              child: TabBarView(
+                children: [
+                  // 2D Shapes Tab
+                  GridView.count(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 2,
+                    crossAxisSpacing: 2,
+                    childAspectRatio: 1.2,
+                    children: [
+                      _ShapeTile(name: 'Line', type: ShapeType.line, icon: LucideIcons.minus, provider: provider),
+                      _ShapeTile(name: 'Rect', type: ShapeType.rectangle, icon: LucideIcons.square, provider: provider),
+                      _ShapeTile(name: 'Circle', type: ShapeType.circle, icon: LucideIcons.circle, provider: provider),
+                      _ShapeTile(name: 'Arrow', type: ShapeType.arrow, icon: LucideIcons.moveRight, provider: provider),
+                      _ShapeTile(name: 'Triangle', type: ShapeType.triangle, icon: LucideIcons.triangle, provider: provider),
+                      _ShapeTile(name: 'Star', type: ShapeType.star, icon: LucideIcons.star, provider: provider),
+                      _ShapeTile(name: 'Diamond', type: ShapeType.diamond, icon: LucideIcons.gem, provider: provider),
+                      _ShapeTile(name: 'Pentagon', type: ShapeType.pentagon, icon: LucideIcons.pentagon, provider: provider),
+                      _ShapeTile(name: 'Hexagon', type: ShapeType.hexagon, icon: LucideIcons.hexagon, provider: provider),
+                      _ShapeTile(name: 'Right Tri', type: ShapeType.rightTriangle, icon: LucideIcons.triangleRight, provider: provider),
+                      _ShapeTile(name: 'Parallelogram', type: ShapeType.parallelogram, icon: LucideIcons.boxSelect, provider: provider),
+                      _ShapeTile(name: 'Heart', type: ShapeType.heart, icon: LucideIcons.heart, provider: provider),
+                    ],
+                  ),
+
+                  // 3D Shapes Tab
+                  GridView.count(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 6,
+                    crossAxisSpacing: 6,
+                    childAspectRatio: 1.3,
+                    children: [
+                      _ShapeTile(name: 'Cube 3D', type: ShapeType.cube3d, icon: LucideIcons.box, provider: provider),
+                      _ShapeTile(name: 'Cylinder 3D', type: ShapeType.cylinder3d, icon: LucideIcons.cylinder, provider: provider),
+                      _ShapeTile(name: 'Cone 3D', type: ShapeType.cone3d, icon: LucideIcons.cone, provider: provider),
+                      _ShapeTile(name: 'Pyramid 3D', type: ShapeType.pyramid3d, icon: LucideIcons.pyramid, provider: provider),
+                      _ShapeTile(name: 'Sphere 3D', type: ShapeType.sphere3d, icon: LucideIcons.globe, provider: provider),
+                    ],
+                  ),
+                ],
               ),
-              _ShapeGridButton(
-                icon: LucideIcons.square,
-                isSelected: provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == ShapeType.rectangle,
-                onTap: () {
-                  provider.setShapeType(ShapeType.rectangle);
-                  provider.setTool(WhiteboardTool.shape);
-                  Navigator.pop(context);
-                },
-              ),
-              _ShapeGridButton(
-                icon: LucideIcons.circle,
-                isSelected: provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == ShapeType.circle,
-                onTap: () {
-                  provider.setShapeType(ShapeType.circle);
-                  provider.setTool(WhiteboardTool.shape);
-                  Navigator.pop(context);
-                },
-              ),
-              _ShapeGridButton(
-                icon: LucideIcons.moveRight,
-                isSelected: provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == ShapeType.arrow,
-                onTap: () {
-                  provider.setShapeType(ShapeType.arrow);
-                  provider.setTool(WhiteboardTool.shape);
-                  Navigator.pop(context);
-                },
-              ),
-              _ShapeGridButton(
-                icon: LucideIcons.triangle,
-                isSelected: provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == ShapeType.triangle,
-                onTap: () {
-                  provider.setShapeType(ShapeType.triangle);
-                  provider.setTool(WhiteboardTool.shape);
-                  Navigator.pop(context);
-                },
-              ),
-              _ShapeGridButton(
-                icon: LucideIcons.star,
-                isSelected: provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == ShapeType.star,
-                onTap: () {
-                  provider.setShapeType(ShapeType.star);
-                  provider.setTool(WhiteboardTool.shape);
-                  Navigator.pop(context);
-                },
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -604,12 +1011,12 @@ class WhiteboardToolbar extends StatelessWidget {
         double width = screenSize.width;
         double height = width / aspectRatio;
 
-        provider.addElement(ImageElement(id: const Uuid().v4(), position: Offset.zero, imageUrl: image.path, size: Size(width, height)));
+        provider.addElement(ImageElement(id: const Uuid().v4(), position: provider.screenToCanvas(Offset.zero), imageUrl: image.path, size: Size(width, height)));
       } catch (e) {
         provider.addElement(
           ImageElement(
             id: const Uuid().v4(),
-            position: Offset.zero,
+            position: provider.screenToCanvas(Offset.zero),
             imageUrl: image.path,
             size: Size(screenSize.width, screenSize.height - 70),
           ),
@@ -728,9 +1135,30 @@ class WhiteboardToolbar extends StatelessWidget {
       case ShapeType.arrow:
         return LucideIcons.moveRight;
       case ShapeType.triangle:
+      case ShapeType.rightTriangle:
         return LucideIcons.triangle;
       case ShapeType.star:
         return LucideIcons.star;
+      case ShapeType.diamond:
+        return LucideIcons.gem;
+      case ShapeType.pentagon:
+      case ShapeType.hexagon:
+        return LucideIcons.hexagon;
+      case ShapeType.parallelogram:
+      case ShapeType.trapezoid:
+        return LucideIcons.boxSelect;
+      case ShapeType.heart:
+        return LucideIcons.heart;
+      case ShapeType.cube3d:
+        return LucideIcons.box;
+      case ShapeType.cylinder3d:
+        return LucideIcons.cylinder;
+      case ShapeType.cone3d:
+        return LucideIcons.cone;
+      case ShapeType.pyramid3d:
+        return LucideIcons.pyramid;
+      case ShapeType.sphere3d:
+        return LucideIcons.globe;
     }
   }
 
@@ -754,6 +1182,7 @@ class WhiteboardToolbar extends StatelessWidget {
           children: [
             // Drawing Tools Group
             _ToolButton(
+              key: _penButtonKey,
               icon: LucideIcons.pencil,
               label: 'Pen',
               isActive: provider.currentTool == WhiteboardTool.pen,
@@ -796,6 +1225,13 @@ class WhiteboardToolbar extends StatelessWidget {
               iconSize: iconSize,
               onTap: () => provider.setTool(WhiteboardTool.select),
             ),
+            _ToolButton(
+              icon: LucideIcons.hand,
+              label: 'Preview',
+              isActive: provider.currentTool == WhiteboardTool.preview,
+              iconSize: iconSize,
+              onTap: () => provider.setTool(WhiteboardTool.preview),
+            ),
             const VerticalDivider(color: Color(0xFFCBD5E1), width: 8, indent: 4, endIndent: 4),
 
             // Shape & Extras Group
@@ -826,6 +1262,14 @@ class WhiteboardToolbar extends StatelessWidget {
               isActive: false,
               iconSize: iconSize,
               onTap: () => _showBackgroundColorPicker(context, provider),
+            ),
+            _ToolButton(
+              key: _toolboxButtonKey,
+              icon: LucideIcons.briefcase,
+              label: 'Toolbox',
+              isActive: false,
+              iconSize: iconSize,
+              onTap: () => _showToolboxDialog(context, provider),
             ),
             const VerticalDivider(color: Color(0xFFCBD5E1), width: 8, indent: 4, endIndent: 4),
 
@@ -886,6 +1330,7 @@ class _ToolButton extends StatelessWidget {
           'Image' => const Color(0xFF22C55E),
           'PPT/PDF' => const Color(0xFFF59E0B),
           'Background' => const Color(0xFF10B981),
+          'Tools' => const Color(0xFF38BDF8),
           'Undo' => isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
           'Redo' => isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
           _ => const Color(0xFF334155),
@@ -928,27 +1373,6 @@ class _ToolButton extends StatelessWidget {
   }
 }
 
-class _ShapeGridButton extends StatelessWidget {
-  final IconData icon;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _ShapeGridButton({required this.icon, required this.isSelected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(color: isSelected ? Colors.blue : const Color(0xFF333333), borderRadius: BorderRadius.circular(12)),
-        child: Icon(icon, color: Colors.white, size: 28),
-      ),
-    );
-  }
-}
-
 class _ColorButton extends StatelessWidget {
   final Color color;
   final bool isSelected;
@@ -958,18 +1382,22 @@ class _ColorButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isWhite = color.value == Colors.white.value;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 40,
-        height: 40,
+        width: 25,
+        height: 25,
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isSelected ? Colors.blue : Colors.grey[300]!, width: isSelected ? 3 : 1),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Colors.blue : (isWhite ? Colors.grey[400]! : Colors.grey[300]!),
+            width: isSelected ? 2.5 : 1,
+          ),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 3)],
         ),
-        child: isSelected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
+        child: isSelected ? Icon(Icons.check, color: isWhite ? Colors.black : Colors.white, size: 14) : null,
       ),
     );
   }
@@ -990,7 +1418,7 @@ class _PenTypeOption extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : Colors.grey[100],
           border: Border.all(color: isSelected ? color : Colors.grey[300]!, width: isSelected ? 2 : 1),
@@ -1008,6 +1436,138 @@ class _PenTypeOption extends StatelessWidget {
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                 color: isSelected ? color : Colors.black87,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PenProfileTab extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _PenProfileTab({required this.title, required this.subtitle, required this.color, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isSelected
+              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                color: color.value == Colors.white.value ? const Color(0xFF64748B) : color,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontSize: 11,
+                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: isSelected ? Colors.blue : const Color(0xFF94A3B8)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShapeTile extends StatelessWidget {
+  final String name;
+  final ShapeType type;
+  final IconData icon;
+  final WhiteboardProvider provider;
+
+  const _ShapeTile({required this.name, required this.type, required this.icon, required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == type;
+    return InkWell(
+      onTap: () {
+        provider.setShapeType(type);
+        provider.setTool(WhiteboardTool.shape);
+        Navigator.pop(context);
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF38BDF8).withValues(alpha: 0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: isSelected ? const Color(0xFF38BDF8) : Colors.white70, size: 16),
+            const SizedBox(height: 2),
+            Text(
+              name,
+              style: TextStyle(
+                color: isSelected ? const Color(0xFF38BDF8) : Colors.white60,
+                fontSize: 9,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolboxOptionItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ToolboxOptionItem({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: const Color(0xFF0F172A)),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(color: Color(0xFF1E293B), fontSize: 8, fontWeight: FontWeight.w600),
             ),
           ],
         ),

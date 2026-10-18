@@ -1,7 +1,29 @@
 import 'package:flutter/material.dart';
 import 'board_element.dart';
 
-enum ShapeType { line, rectangle, circle, arrow, triangle, star }
+enum ShapeType {
+  // 2D Shapes
+  line,
+  rectangle,
+  circle,
+  arrow,
+  triangle,
+  star,
+  diamond,
+  pentagon,
+  hexagon,
+  rightTriangle,
+  parallelogram,
+  trapezoid,
+  heart,
+
+  // 3D Shapes
+  cube3d,
+  cylinder3d,
+  cone3d,
+  pyramid3d,
+  sphere3d,
+}
 
 class ShapeElement extends BoardElement {
   final ShapeType shapeType;
@@ -45,7 +67,7 @@ class ShapeElement extends BoardElement {
       rotation: json['rotation']?.toDouble() ?? 0.0,
       scale: json['scale']?.toDouble() ?? 1.0,
       docPage: json['docPage'],
-      shapeType: ShapeType.values.byName(json['shapeType']),
+      shapeType: ShapeType.values.firstWhere((e) => e.name == json['shapeType'], orElse: () => ShapeType.rectangle),
       endPoint: Offset(json['endPoint']['dx'], json['endPoint']['dy']),
       color: Color(json['color']),
       strokeWidth: json['strokeWidth'].toDouble(),
