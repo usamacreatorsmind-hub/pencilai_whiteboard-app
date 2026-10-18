@@ -43,3 +43,8 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
+// select
+// pen thick and thin
+// qr code sharing
+// menu

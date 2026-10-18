@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../widgets/whiteboard_canvas.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/object_handles.dart';
@@ -16,6 +17,8 @@ import '../widgets/protractor_widget.dart';
 import '../widgets/setsquare_widget.dart';
 import '../widgets/compass_widget.dart';
 import '../models/stroke_element.dart';
+import '../models/image_element.dart';
+import '../models/document_element.dart';
 import 'package:uuid/uuid.dart';
 import '../services/board_storage_service.dart';
 import '../state/whiteboard_provider.dart';
@@ -106,7 +109,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     }
   }
 
-
   /// Global (screen) points -> canvas coords (pan hata ke)
   List<Offset> _toCanvasPoints(List<Offset> globalPoints) {
     final renderBox = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
@@ -131,7 +133,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       ),
     );
   }
-
 
   void _handleSave() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
@@ -218,6 +219,202 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         ],
       ),
     );
+  }
+
+  void _showMenuPopup(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (context) => Stack(
+        children: [
+          Positioned(
+            bottom: 70,
+            left: 24,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 200,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9), // Light background like Image 2
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 4))],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildMenuItem(context, LucideIcons.filePlus, 'New', () {
+                      Navigator.pop(context);
+                      _handleNewBoard();
+                    }),
+                    _buildMenuItem(context, LucideIcons.folderOpen, 'Open', () {
+                      Navigator.pop(context);
+                      _handleOpenFile();
+                    }),
+                    _buildMenuItem(context, LucideIcons.save, 'Save', () {
+                      Navigator.pop(context);
+                      _handleSave();
+                    }),
+                    _buildMenuItem(context, LucideIcons.fileText, 'Save as', () {
+                      Navigator.pop(context);
+                      _handleSaveAs();
+                    }),
+                    _buildMenuItem(context, LucideIcons.scanLine, 'Scan', () {
+                      Navigator.pop(context);
+                      _handleScan();
+                    }),
+                    const Divider(height: 1, color: Colors.black12),
+                    _buildMenuItem(context, LucideIcons.logOut, 'Exit', () {
+                      Navigator.pop(context);
+                      _handleExit();
+                    }, isRed: true),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItem(BuildContext context, IconData icon, String label, VoidCallback onTap, {bool isRed = false}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: isRed ? Colors.red : const Color(0xFF334155)),
+            const SizedBox(width: 14),
+            Text(
+              label,
+              style: TextStyle(color: isRed ? Colors.red : const Color(0xFF1E293B), fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleNewBoard() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('New Board', style: TextStyle(color: Colors.white)),
+        content: const Text('Do you want to save your current work before starting a new board?', style: TextStyle(color: Colors.grey)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _handleSave();
+            },
+            child: const Text('Save', style: TextStyle(color: Colors.blue)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              final provider = Provider.of<WhiteboardProvider>(context, listen: false);
+              provider.clearCurrentPage();
+            },
+            child: const Text('Don\'t Save', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleOpenFile() async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
+    try {
+      final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['jpg', 'png', 'jpeg', 'pdf', 'ppt', 'pptx']);
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        final lower = filePath.toLowerCase();
+        if (lower.endsWith('jpg') || lower.endsWith('png') || lower.endsWith('jpeg')) {
+          provider.addElement(
+            ImageElement(
+              id: const Uuid().v4(),
+              position: provider.screenToCanvas(Offset.zero),
+              imageUrl: filePath,
+              size: const Size(600, 450),
+            ),
+          );
+        } else {
+          final fileName = result.files.single.name;
+          provider.addElement(
+            DocumentElement(
+              id: const Uuid().v4(),
+              position: provider.screenToCanvas(Offset.zero),
+              filePath: filePath,
+              fileName: fileName,
+              size: const Size(600, 800),
+            ),
+          );
+        }
+        scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('File opened successfully!')));
+      }
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to open file: $e')));
+    }
+  }
+
+  void _handleSaveAs() {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final controller = TextEditingController(text: 'Whiteboard_${DateTime.now().millisecondsSinceEpoch}');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Save As', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            labelText: 'File Name',
+            labelStyle: TextStyle(color: Colors.grey),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final fileName = controller.text.trim();
+              Navigator.pop(context);
+              if (fileName.isNotEmpty) {
+                try {
+                  await _storageService.exportToImage(_canvasKey);
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(backgroundColor: Colors.green, content: Text('Saved as "$fileName" successfully!')),
+                  );
+                } catch (e) {
+                  scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to save: $e')));
+                }
+              }
+            },
+            child: const Text(
+              'Save',
+              style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleScan() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Scan / QR feature triggered')));
   }
 
   void _handleDirectWhatsAppShare() async {
@@ -355,18 +552,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   ),
                   if (_showRuler)
                     RulerWidget(
-                      initialPosition: Offset(
-                        MediaQuery.of(context).size.width / 2 - 220,
-                        MediaQuery.of(context).size.height / 2 - 55,
-                      ),
+                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 220, MediaQuery.of(context).size.height / 2 - 55),
                       onClose: () => setState(() => _showRuler = false),
                     ),
                   if (_showProtractor)
                     ProtractorWidget(
-                      initialPosition: Offset(
-                        MediaQuery.of(context).size.width / 2 - 180,
-                        MediaQuery.of(context).size.height / 2 - 95,
-                      ),
+                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 180, MediaQuery.of(context).size.height / 2 - 95),
                       onClose: () => setState(() => _showProtractor = false),
                       onDrawAngle: (shape) {
                         _addStrokeFromGlobal(shape.strokePoints);
@@ -377,10 +568,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     ),
                   if (_showSetSquare)
                     SetSquareWidget(
-                      initialPosition: Offset(
-                        MediaQuery.of(context).size.width / 2 - 140,
-                        MediaQuery.of(context).size.height / 2 - 100,
-                      ),
+                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 140, MediaQuery.of(context).size.height / 2 - 100),
                       onClose: () => setState(() => _showSetSquare = false),
                       onDrawLine: (points) {
                         _addStrokeFromGlobal(points);
@@ -388,19 +576,30 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     ),
                   if (_showCompass)
                     CompassWidget(
-                      initialPosition: Offset(
-                        MediaQuery.of(context).size.width / 2 - 130,
-                        MediaQuery.of(context).size.height / 2 - 130,
-                      ),
+                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 130, MediaQuery.of(context).size.height / 2 - 130),
                       onClose: () => setState(() => _showCompass = false),
                       onDrawArc: (points) {
                         _addStrokeFromGlobal(points);
                       },
                     ),
-                  Positioned(bottom: 10, right: 30, child: PageSwitcher(onPageCountTap: () => setState(() => _isSidebarOpen = !_isSidebarOpen))),
+                  Positioned(
+                    bottom: 10,
+                    right: 30,
+                    child: PageSwitcher(onPageCountTap: () => setState(() => _isSidebarOpen = !_isSidebarOpen)),
+                  ),
                   Positioned(
                     bottom: 10,
                     left: 24,
+                    child: _CircularActionButton(
+                      icon: LucideIcons.menu,
+                      label: 'MENU',
+                      accentColor: const Color(0xFF2563EB), // Blue Accent
+                      onTap: () => _showMenuPopup(context),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 10,
+                    left: 78,
                     child: _CircularActionButton(
                       icon: LucideIcons.logOut,
                       label: 'EXIT',
@@ -410,7 +609,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   ),
                   Positioned(
                     bottom: 10,
-                    left: 78,
+                    left: 132,
                     child: _CircularActionButton(
                       icon: LucideIcons.save,
                       label: 'SAVE',
@@ -420,7 +619,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   ),
                   Positioned(
                     bottom: 10,
-                    left: 132,
+                    left: 186,
                     child: Consumer<AuthProvider>(
                       builder: (context, auth, _) {
                         return _CircularActionButton(
@@ -449,13 +648,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
 }
 
 class _CircularActionButton extends StatelessWidget {
-  final IconData? icon;
-  final String? assetIconPath;
+  final IconData icon;
   final String label;
   final Color accentColor;
   final VoidCallback onTap;
 
-  const _CircularActionButton({this.icon, this.assetIconPath, required this.label, required this.accentColor, required this.onTap});
+  const _CircularActionButton({required this.icon, required this.label, required this.accentColor, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -473,10 +671,7 @@ class _CircularActionButton extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (assetIconPath != null)
-              Image.asset(assetIconPath!, width: 18, height: 18)
-            else if (icon != null)
-              Icon(icon, color: accentColor, size: 16),
+            Icon(icon, color: accentColor, size: 16),
             const SizedBox(height: 1),
             Text(
               label,
