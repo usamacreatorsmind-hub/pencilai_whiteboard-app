@@ -25,6 +25,7 @@ import '../state/whiteboard_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../auth/widgets/profile_dialog.dart';
 import '../../auth/widgets/account_selection_dialog.dart';
+import '../widgets/qr_notes_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class WhiteboardScreen extends StatefulWidget {
@@ -37,20 +38,17 @@ class WhiteboardScreen extends StatefulWidget {
 class _WhiteboardScreenState extends State<WhiteboardScreen> {
   final GlobalKey _canvasKey = GlobalKey();
   final BoardStorageService _storageService = BoardStorageService();
-  late final AuthProvider _auth;
   bool _isSidebarOpen = false;
   bool _showRuler = false;
   bool _showProtractor = false;
   bool _showSetSquare = false;
   bool _showCompass = false;
-  bool _dialogShown = false;
   bool _isConnected = true;
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
-    _auth = Provider.of<AuthProvider>(context, listen: false);
     // Ensure immersive mode is active when screen starts
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -62,11 +60,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       }
     });
 
-    // Listen to AuthProvider for async account loading completion
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<WhiteboardProvider>(context, listen: false).canvasKey = _canvasKey;
-      _auth.addListener(_onAuthStateChanged);
-      _checkAndShowAccountSelection();
     });
   }
 
@@ -81,31 +76,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
-    _auth.removeListener(_onAuthStateChanged);
     super.dispose();
   }
 
-  void _onAuthStateChanged() {
-    if (!_dialogShown && mounted) {
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-      if (auth.hasLoadedRecentAccounts && !auth.isLoggedIn) {
-        _dialogShown = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            AccountSelectionDialog.show(context);
-          }
-        });
-      }
-    }
-  }
-
-  void _checkAndShowAccountSelection() {
-    if (!_dialogShown && mounted) {
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-      if (auth.hasLoadedRecentAccounts && !auth.isLoggedIn) {
-        _dialogShown = true;
-        AccountSelectionDialog.show(context);
-      }
+  void _handleLoginOrProfile() {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (auth.isLoggedIn) {
+      ProfileDialog.show(context);
+    } else {
+      AccountSelectionDialog.show(context);
     }
   }
 
@@ -225,7 +204,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     showDialog(
       context: context,
       barrierColor: Colors.black54,
-      builder: (context) => Stack(
+      builder: (menuContext) => Stack(
         children: [
           Positioned(
             bottom: 70,
@@ -235,36 +214,51 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               child: Container(
                 width: 200,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9), // Light background like Image 2
+                  color: const Color(0xFFF1F5F9), // Light background
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 4))],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildMenuItem(context, LucideIcons.filePlus, 'New', () {
-                      Navigator.pop(context);
+                    Consumer<AuthProvider>(
+                      builder: (context, auth, _) {
+                        final bool isLoggedIn = auth.isLoggedIn;
+                        return _buildMenuItem(
+                          menuContext,
+                          isLoggedIn ? LucideIcons.userCheck : LucideIcons.logIn,
+                          isLoggedIn ? auth.displayName : 'Login',
+                          () {
+                            Navigator.pop(menuContext);
+                            _handleLoginOrProfile();
+                          },
+                        );
+                      },
+                    ),
+                    const Divider(height: 1, color: Colors.black12),
+                    _buildMenuItem(menuContext, LucideIcons.filePlus, 'New', () {
+                      Navigator.pop(menuContext);
                       _handleNewBoard();
                     }),
-                    _buildMenuItem(context, LucideIcons.folderOpen, 'Open', () {
-                      Navigator.pop(context);
+                    _buildMenuItem(menuContext, LucideIcons.folderOpen, 'Open', () {
+                      Navigator.pop(menuContext);
                       _handleOpenFile();
                     }),
-                    _buildMenuItem(context, LucideIcons.save, 'Save', () {
-                      Navigator.pop(context);
+                    _buildMenuItem(menuContext, LucideIcons.save, 'Save', () {
+                      Navigator.pop(menuContext);
                       _handleSave();
                     }),
-                    _buildMenuItem(context, LucideIcons.fileText, 'Save as', () {
-                      Navigator.pop(context);
+                    _buildMenuItem(menuContext, LucideIcons.fileText, 'Save as', () {
+                      Navigator.pop(menuContext);
                       _handleSaveAs();
                     }),
-                    _buildMenuItem(context, LucideIcons.scanLine, 'Scan', () {
-                      Navigator.pop(context);
+                    _buildMenuItem(menuContext, LucideIcons.scanLine, 'Scan', () {
+                      Navigator.pop(menuContext);
                       _handleScan();
                     }),
                     const Divider(height: 1, color: Colors.black12),
-                    _buildMenuItem(context, LucideIcons.logOut, 'Exit', () {
-                      Navigator.pop(context);
+                    _buildMenuItem(menuContext, LucideIcons.logOut, 'Exit', () {
+                      Navigator.pop(menuContext);
                       _handleExit();
                     }, isRed: true),
                   ],
@@ -287,9 +281,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           children: [
             Icon(icon, size: 20, color: isRed ? Colors.red : const Color(0xFF334155)),
             const SizedBox(width: 14),
-            Text(
-              label,
-              style: TextStyle(color: isRed ? Colors.red : const Color(0xFF1E293B), fontSize: 15, fontWeight: FontWeight.w600),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(color: isRed ? Colors.red : const Color(0xFF1E293B), fontSize: 15, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -414,7 +411,7 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   }
 
   void _handleScan() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Scan / QR feature triggered')));
+    QrNotesDialog.show(context, _canvasKey);
   }
 
   void _handleDirectWhatsAppShare() async {
@@ -554,6 +551,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     RulerWidget(
                       initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 220, MediaQuery.of(context).size.height / 2 - 55),
                       onClose: () => setState(() => _showRuler = false),
+                      onDrawLine: (points) {
+                        _addStrokeFromGlobal(points);
+                      },
                     ),
                   if (_showProtractor)
                     ProtractorWidget(
@@ -595,46 +595,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       label: 'MENU',
                       accentColor: const Color(0xFF2563EB), // Blue Accent
                       onTap: () => _showMenuPopup(context),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 10,
-                    left: 78,
-                    child: _CircularActionButton(
-                      icon: LucideIcons.logOut,
-                      label: 'EXIT',
-                      accentColor: const Color(0xFFF97316), // Warm Orange
-                      onTap: _handleExit,
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 10,
-                    left: 132,
-                    child: _CircularActionButton(
-                      icon: LucideIcons.save,
-                      label: 'SAVE',
-                      accentColor: const Color(0xFF10B981), // Emerald Green
-                      onTap: _handleSave,
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 10,
-                    left: 186,
-                    child: Consumer<AuthProvider>(
-                      builder: (context, auth, _) {
-                        return _CircularActionButton(
-                          icon: auth.isLoggedIn ? LucideIcons.userCheck : LucideIcons.user,
-                          label: auth.displayName,
-                          accentColor: const Color(0xFF38BDF8), // Sky Blue
-                          onTap: () {
-                            if (auth.isLoggedIn) {
-                              ProfileDialog.show(context);
-                            } else {
-                              AccountSelectionDialog.show(context);
-                            }
-                          },
-                        );
-                      },
                     ),
                   ),
                 ],

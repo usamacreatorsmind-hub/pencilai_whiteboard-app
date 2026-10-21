@@ -16,7 +16,6 @@ import '../models/stroke_element.dart';
 import '../state/whiteboard_provider.dart';
 import 'canvas/canvas_pointer_manager.dart';
 import 'canvas/whiteboard_painter.dart';
-
 export 'canvas/whiteboard_painter.dart';
 
 /// Main interactive whiteboard canvas widget handling touch events, drawing tools,
@@ -30,6 +29,12 @@ class WhiteboardCanvas extends StatefulWidget {
 
 class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final CanvasPointerManager _pointerManager = CanvasPointerManager();
+
+  // Per-stroke nib detection state (pointerId -> tracker)
+  final Map<int, _NibTrack> _nibTracks = {};
+  static const int _kNibDecideMs = 150; // initial voting window
+  static const int _kNibThickStreak =
+  3; // consecutive thick readings to upgrade later
 
   // displayElements memoization
   Iterable<BoardElement>? _displaySource;
@@ -66,7 +71,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   // -------------------------------------------------------------------------
 
   Iterable<MindMapElement> _visibleMindMaps(WhiteboardProvider provider) sync* {
-    final page = provider.isDocumentOverlayOpen ? provider.overlayCurrentPage : null;
+    final page = provider.isDocumentOverlayOpen
+        ? provider.overlayCurrentPage
+        : null;
     final els = provider.currentPage.elements;
     for (int i = els.length - 1; i >= 0; i--) {
       final el = els[i];
@@ -88,13 +95,19 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final d = q - c;
       final cosA = cos(-el.rotation);
       final sinA = sin(-el.rotation);
-      final r = Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) / el.scale;
+      final r =
+          Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) /
+              el.scale;
       q = c + r;
     }
     return q - el.position;
   }
 
-  ({MindMapElement el, MindMapNode node})? _mindMapNodeAt(Offset p, WhiteboardProvider provider, {double inflate = 0}) {
+  ({MindMapElement el, MindMapNode node})? _mindMapNodeAt(
+      Offset p,
+      WhiteboardProvider provider, {
+        double inflate = 0,
+      }) {
     for (final el in _visibleMindMaps(provider)) {
       final n = el.nodeAt(_mmLocal(el, p), inflate: inflate);
       if (n != null) return (el: el, node: n);
@@ -148,9 +161,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (CanvasPointerManager.kDebugPointerInfo) {
       debugPrint(
         'DOWN: kind=${event.kind} dev=${event.device} id=${event.pointer} '
-        'rMajor=${event.radiusMajor.toStringAsFixed(1)} rMinor=${event.radiusMinor.toStringAsFixed(1)} '
-        'size=${event.size.toStringAsFixed(4)} press=${event.pressure.toStringAsFixed(2)} '
-        'active=${_pointerManager.pointers.length}',
+            'rMajor=${event.radiusMajor.toStringAsFixed(1)} rMinor=${event.radiusMinor.toStringAsFixed(1)} '
+            'size=${event.size.toStringAsFixed(4)} press=${event.pressure.toStringAsFixed(2)} '
+            'active=${_pointerManager.pointers.length}',
       );
     }
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
@@ -163,7 +176,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       return;
     }
 
-    if (!_pointerManager.isPalm(event) && _handleMindMapButtons(localPos, provider)) {
+    if (!_pointerManager.isPalm(event) &&
+        _handleMindMapButtons(localPos, provider)) {
       _pointerManager.requestRepaint(mounted);
       return;
     }
@@ -180,7 +194,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       if (!_pointerManager.isUsingGestureEraser) {
         _pointerManager.switchToEraserMode(provider, context, mounted);
       } else {
-        _pointerManager.queueGestureErase(_pointerManager.gestureEraseCentroid(localPos, context), context, mounted);
+        _pointerManager.queueGestureErase(
+          _pointerManager.gestureEraseCentroid(localPos, context),
+          context,
+          mounted,
+        );
       }
       return;
     }
@@ -196,9 +214,13 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
               provider.refreshBoard();
             }
           }
-          provider.selectElement(hit.id, multi: provider.selectedElementIds.contains(hit.id));
+          provider.selectElement(
+            hit.id,
+            multi: provider.selectedElementIds.contains(hit.id),
+          );
         } else {
-          _pointerManager.currentLasso = Path()..moveTo(localPos.dx, localPos.dy);
+          _pointerManager.currentLasso = Path()
+            ..moveTo(localPos.dx, localPos.dy);
           provider.clearSelection();
           _pointerManager.requestRepaint(mounted);
         }
@@ -207,13 +229,19 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     final id = const Uuid().v4();
-    final docPage = provider.isDocumentOverlayOpen ? provider.overlayCurrentPage : null;
+    final docPage = provider.isDocumentOverlayOpen
+        ? provider.overlayCurrentPage
+        : null;
     if (provider.currentTool == WhiteboardTool.pen) {
+      _nibTracks[pointerId] = _NibTrack();
       _detectNib(event, provider);
 
       final startHit = _mindMapNodeAt(localPos, provider, inflate: 6);
       if (startHit != null) {
-        _pointerManager.mmStrokeTargets[pointerId] = (mmId: startHit.el.id, nodeId: startHit.node.id);
+        _pointerManager.mmStrokeTargets[pointerId] = (
+        mmId: startHit.el.id,
+        nodeId: startHit.node.id,
+        );
         if (startHit.el.selectedNodeId != startHit.node.id) {
           startHit.el.selectedNodeId = startHit.node.id;
           provider.refreshBoard();
@@ -247,17 +275,78 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _pointerManager.requestRepaint(mounted);
   }
 
-  void _detectNib(PointerEvent event, WhiteboardProvider provider) {
-    double effectiveRadius = event.radiusMajor;
+  /// Contact radius — same formula as the original calibration (1.5 threshold).
+  double _nibRadiusOf(PointerEvent event) {
+    double r = event.radiusMajor;
     if (event.radiusMinor > 0 && event.radiusMajor > 0) {
-      effectiveRadius = (event.radiusMajor + event.radiusMinor) / 2.0;
+      r = (event.radiusMajor + event.radiusMinor) / 2.0;
     }
-    if (effectiveRadius == 0 && event.size > 0) {
-      effectiveRadius = event.size * 100.0;
+    if (r <= 0 && event.size > 0) {
+      r = event.size * 100.0;
     }
-    final isInvertedStylus = event.kind == PointerDeviceKind.invertedStylus;
-    provider.autoDetectNibProfile(effectiveRadius, isInvertedStylus: isInvertedStylus);
+    return r;
   }
+
+  /// Robust real-time per-stroke nib detection.
+  ///
+  /// * radius 0 frames (tip not settled yet) are ignored, never forced to thin.
+  /// * During the first [_kNibDecideMs] the profile is decided by voting:
+  ///   thick if >= 2 readings (or the only reading) are above threshold.
+  ///   A single noisy spike can't flip it, and a thick nib is caught fast.
+  /// * After the window, the stroke can still be UPGRADED to thick if
+  ///   [_kNibThickStreak] consecutive thick readings arrive (late settle /
+  ///   pressed harder). It is never downgraded mid-stroke (prevents flicker).
+  /// * Large radii (thick nib pressed hard) count as thick, up to palm size.
+  /// Returns true if the active profile changed.
+  bool _detectNib(PointerEvent event, WhiteboardProvider provider) {
+    if (!provider.isAutoNibDetectionEnabled) return false;
+    final t = _nibTracks[event.pointer];
+    if (t == null) return false;
+
+    if (event.kind == PointerDeviceKind.invertedStylus) {
+      return provider.applyDetectedNib(PenProfile.thick, 0);
+    }
+
+    final r = _nibRadiusOf(event);
+    if (r <= 0 || r >= CanvasPointerManager.kBackhandRadiusMin) return false;
+
+    final thr = provider.nibRadiusThreshold;
+    final isThick = r > thr;
+    t.valid++;
+    if (isThick) {
+      t.thickCount++;
+    }
+    // Late-upgrade streak only counts clearly-thick readings (margin above threshold)
+    if (r > thr + 0.25) {
+      t.thickStreak++;
+    } else {
+      t.thickStreak = 0;
+    }
+
+    final downTime = _pointerManager.pointerDownTimes[event.pointer];
+    final elapsed = downTime == null
+        ? 0
+        : DateTime.now().difference(downTime).inMilliseconds;
+
+    // Early lock: if 3 valid readings are all thin, lock thin immediately without waiting 150ms.
+    if (!t.locked &&
+        (elapsed > _kNibDecideMs || (t.valid >= 3 && t.thickCount == 0))) {
+      t.locked = true;
+    }
+
+    PenProfile? target;
+    if (!t.locked) {
+      final needed = t.valid == 1 ? 1 : 2;
+      target = t.thickCount >= needed ? PenProfile.thick : PenProfile.thin;
+    } else if (provider.activePenProfile == PenProfile.thin &&
+        t.thickStreak >= _kNibThickStreak) {
+      target = PenProfile.thick; // late upgrade
+    }
+    if (target == null || target == provider.activePenProfile) return false;
+    return provider.applyDetectedNib(target, r);
+  }
+
+  void _forgetNib(int pid) => _nibTracks.remove(pid);
 
   void _onPointerMove(PointerMoveEvent event, WhiteboardProvider provider) {
     _pointerManager.pointers[event.pointer] = event;
@@ -265,7 +354,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _processSinglePointerMove(event, provider);
   }
 
-  void _processSinglePointerMove(PointerMoveEvent event, WhiteboardProvider provider) {
+  void _processSinglePointerMove(
+      PointerMoveEvent event,
+      WhiteboardProvider provider,
+      ) {
     _pointerManager.pruneStalePointers();
     final pointerId = event.pointer;
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
@@ -278,8 +370,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       return;
     }
 
-    if (CanvasPointerManager.kDebugPointerInfo && DateTime.now().difference(_pointerManager.lastMoveLogTime).inMilliseconds > 100) {
-      debugPrint('MOVE: pointers=${_pointerManager.pointers.length} fresh=${_pointerManager.freshTouchPointers().length} eraserMode=${_pointerManager.isUsingGestureEraser}');
+    if (CanvasPointerManager.kDebugPointerInfo &&
+        DateTime.now()
+            .difference(_pointerManager.lastMoveLogTime)
+            .inMilliseconds >
+            100) {
+      debugPrint(
+        'MOVE: pointers=${_pointerManager.pointers.length} fresh=${_pointerManager.freshTouchPointers().length} eraserMode=${_pointerManager.isUsingGestureEraser}',
+      );
       _pointerManager.lastMoveLogTime = DateTime.now();
     }
 
@@ -288,23 +386,42 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _pointerManager.switchToEraserMode(provider, context, mounted);
         return;
       }
-      _pointerManager.queueGestureErase(_pointerManager.gestureEraseCentroid(localPos, context), context, mounted);
+      _pointerManager.queueGestureErase(
+        _pointerManager.gestureEraseCentroid(localPos, context),
+        context,
+        mounted,
+      );
       return;
     }
 
     if (provider.currentTool == WhiteboardTool.pen) {
-      _detectNib(event, provider);
+      final profileChanged = _detectNib(event, provider);
+
+      // Nib detected/changed while the tip was settling -> restyle the live stroke
+      // so it draws with the correct nib's colour & size from the first point.
+      final active = _pointerManager.activeElements[pointerId];
+      if (profileChanged && active is StrokeElement) {
+        active.updateStyling(
+          newColor: provider.currentColor,
+          newStrokeWidth: provider.strokeWidth,
+          newPenType: provider.currentPenType,
+        );
+        _pointerManager.requestRepaint(mounted);
+      }
     }
 
-    if (provider.currentTool == WhiteboardTool.select && _pointerManager.currentLasso != null) {
+    if (provider.currentTool == WhiteboardTool.select &&
+        _pointerManager.currentLasso != null) {
       _pointerManager.currentLasso!.lineTo(localPos.dx, localPos.dy);
-      provider.updateLassoPath(_pointerManager.currentLasso);
+      provider.setLassoPath(_pointerManager.currentLasso);
       _pointerManager.requestRepaint(mounted);
       return;
     }
 
-    if (provider.currentTool == WhiteboardTool.eraser || _pointerManager.eraserPositions.containsKey(pointerId)) {
-      final prevPos = _pointerManager.lastEraserPositions[pointerId] ?? localPos;
+    if (provider.currentTool == WhiteboardTool.eraser ||
+        _pointerManager.eraserPositions.containsKey(pointerId)) {
+      final prevPos =
+          _pointerManager.lastEraserPositions[pointerId] ?? localPos;
       _pointerManager.eraserPositions[pointerId] = localPos;
       _pointerManager.lastEraserPositions[pointerId] = localPos;
       provider.partialErase(localPos, provider.eraserSize, lastPos: prevPos);
@@ -321,7 +438,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _pointerManager.requestRepaint(mounted);
       }
     } else if (active is ShapeElement) {
-      _pointerManager.activeElements[pointerId] = active.copyWith(endPoint: localPos)..invalidateBounds();
+      _pointerManager.activeElements[pointerId] = active.copyWith(
+        endPoint: localPos,
+      )..invalidateBounds();
       _pointerManager.requestRepaint(mounted);
     }
   }
@@ -329,7 +448,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   void _onPointerUp(PointerUpEvent event, WhiteboardProvider provider) {
     _pointerManager.pruneStalePointers(force: true);
     if (CanvasPointerManager.kDebugPointerInfo) {
-      debugPrint('UP: id=${event.pointer} remaining=${_pointerManager.pointers.length - 1}');
+      debugPrint(
+        'UP: id=${event.pointer} remaining=${_pointerManager.pointers.length - 1}',
+      );
     }
     final pointerId = event.pointer;
 
@@ -341,6 +462,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final mmTarget = _pointerManager.mmStrokeTargets[pointerId];
     final element = _pointerManager.activeElements.remove(pointerId);
     _pointerManager.forgetPointer(pointerId);
+    _forgetNib(pointerId);
 
     if (!_pointerManager.hasTouchDown()) {
       _pointerManager.resetGestureEraser();
@@ -348,16 +470,23 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     if (provider.currentTool == WhiteboardTool.select) {
       if (_pointerManager.currentLasso != null) {
-        _pointerManager.currentLasso!.close();
-        provider.updateLassoPath(_pointerManager.currentLasso);
+        final lasso = _pointerManager.currentLasso!;
+        lasso.close();
+        provider.completeLassoSelection(lasso);
         _pointerManager.currentLasso = null;
-        provider.updateLassoPath(null);
       }
       _pointerManager.requestRepaint(mounted);
       return;
     }
 
-    final bool dropElement = wasGestureEraser && _pointerManager.isTouchKind(event);
+    final downTime = _pointerManager.pointerDownTimes[pointerId];
+    final durationMs = downTime != null
+        ? DateTime.now().difference(downTime).inMilliseconds
+        : 999;
+    final bool isQuickPalm = durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
+        _pointerManager.isPalm(event);
+    final bool dropElement =
+        (wasGestureEraser || isQuickPalm) && _pointerManager.isTouchKind(event);
     if (element != null && !dropElement) {
       if (element is StrokeElement && element.points.length > 1) {
         element.invalidatePath();
@@ -366,7 +495,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
           final mm = _findMindMapById(provider, mmTarget.mmId);
           final node = mm?.root.findNode(mmTarget.nodeId);
           if (mm != null && node != null) {
-            mm.addStroke(node.id, element.points.map((p) => _mmLocal(mm, p)).toList(), color: element.color);
+            mm.addStroke(
+              node.id,
+              element.points.map((p) => _mmLocal(mm, p)).toList(),
+              color: element.color,
+            );
             mm.selectedNodeId = node.id;
             element.disposeLive();
             provider.refreshBoard();
@@ -380,7 +513,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       } else if (element is ShapeElement) {
         if ((element.position - element.endPoint).distance > 5) {
           provider.addElement(element);
-          WhiteboardPainter.appendElementToCache(element, provider.boardVersion);
+          WhiteboardPainter.appendElementToCache(
+            element,
+            provider.boardVersion,
+          );
         }
       } else if (element is StrokeElement) {
         element.disposeLive();
@@ -395,18 +531,27 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _pointerManager.pruneStalePointers(force: true);
     _pointerManager.cancelEventCount++;
     final pointerId = event.pointer;
+    _forgetNib(pointerId);
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
 
     final downTime = _pointerManager.pointerDownTimes[pointerId];
-    final durationMs = downTime != null ? DateTime.now().difference(downTime).inMilliseconds : 999;
+    final durationMs = downTime != null
+        ? DateTime.now().difference(downTime).inMilliseconds
+        : 999;
     final hint = _pointerManager.nativeTouchHints[pointerId];
 
     final bool isPalmCancel =
-        durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs && (_pointerManager.isPalm(event) || (hint != null && (hint['isCanceled'] == true || hint['toolType'] == 5)));
+        durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
+            (_pointerManager.isPalm(event) ||
+                (hint != null &&
+                    (hint['isCanceled'] == true || hint['toolType'] == 5)));
 
-    _pointerManager.lastCancelInfo = 'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
+    _pointerManager.lastCancelInfo =
+    'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
     if (CanvasPointerManager.kDebugPointerInfo) {
-      debugPrint('CANCEL: ${_pointerManager.lastCancelInfo} totalCount=${_pointerManager.cancelEventCount}');
+      debugPrint(
+        'CANCEL: ${_pointerManager.lastCancelInfo} totalCount=${_pointerManager.cancelEventCount}',
+      );
     }
 
     if (_pointerManager.isUsingGestureEraser) {
@@ -414,10 +559,20 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     if (isPalmCancel) {
-      provider.partialErase(localPos, _pointerManager.gestureEraseRadius(), lastPos: localPos);
+      provider.partialErase(
+        localPos,
+        _pointerManager.gestureEraseRadius(),
+        lastPos: localPos,
+      );
     }
 
     _pointerManager.forgetPointer(pointerId);
+
+    if (provider.currentTool == WhiteboardTool.select &&
+        _pointerManager.currentLasso != null) {
+      _pointerManager.currentLasso = null;
+      provider.setLassoPath(null);
+    }
 
     if (!_pointerManager.hasTouchDown()) {
       _pointerManager.resetGestureEraser();
@@ -429,7 +584,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   // Build
   // -------------------------------------------------------------------------
 
-  List<BoardElement> _displayElementsFor(Iterable<BoardElement> elements, int version, bool overlay, int page) {
+  List<BoardElement> _displayElementsFor(
+      Iterable<BoardElement> elements,
+      int version,
+      bool overlay,
+      int page,
+      ) {
     final len = elements.length;
     if (identical(_displaySource, elements) &&
         _displayCacheVersion == version &&
@@ -443,7 +603,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _displayCacheOverlay = overlay;
     _displayCachePage = page;
     _displayCacheLen = len;
-    _displayCache = overlay ? elements.where((e) => e.docPage == page).toList() : elements.where((e) => e.docPage == null).toList();
+    _displayCache = overlay
+        ? elements.where((e) => e.docPage == page).toList()
+        : elements.where((e) => e.docPage == null).toList();
     return _displayCache;
   }
 
@@ -466,10 +628,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             end: Alignment.bottomRight,
             colors: [Color(0xFFFFFFFF), Color(0xFFF1F5F9)],
           ),
-          border: Border.all(color: const Color(0xFF94A3B8), width: borderWidth),
+          border: Border.all(
+            color: const Color(0xFF94A3B8),
+            width: borderWidth,
+          ),
         ),
         child: Center(
-          child: Icon(LucideIcons.eraser, color: const Color(0xFF64748B), size: (diameter * iconFactor).clamp(minIcon, maxIcon)),
+          child: Icon(
+            LucideIcons.eraser,
+            color: const Color(0xFF64748B),
+            size: (diameter * iconFactor).clamp(minIcon, maxIcon),
+          ),
         ),
       ),
     );
@@ -477,15 +646,18 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    return Selector<WhiteboardProvider, (int, Set<String>, Path?, WhiteboardTool, bool, int, Offset)>(
+    return Selector<
+        WhiteboardProvider,
+        (int, Set<String>, Path?, WhiteboardTool, bool, int, Offset)
+    >(
       selector: (context, provider) => (
-        provider.boardVersion,
-        provider.selectedElementIds,
-        provider.lassoPath,
-        provider.currentTool,
-        provider.isDocumentOverlayOpen,
-        provider.overlayCurrentPage,
-        provider.canvasPanOffset,
+      provider.boardVersion,
+      provider.selectedElementIds,
+      provider.lassoPath,
+      provider.currentTool,
+      provider.isDocumentOverlayOpen,
+      provider.overlayCurrentPage,
+      provider.canvasPanOffset,
       ),
       builder: (context, data, _) {
         final provider = context.read<WhiteboardProvider>();
@@ -497,8 +669,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         final overlayCurrentPage = data.$6;
         final panOffset = data.$7;
 
-        final displayElements = _displayElementsFor(elements, data.$1, isOverlayOpen, overlayCurrentPage);
-        final shouldIgnoreTouches = isOverlayOpen && currentTool == WhiteboardTool.select;
+        final displayElements = _displayElementsFor(
+          elements,
+          data.$1,
+          isOverlayOpen,
+          overlayCurrentPage,
+        );
+        final shouldIgnoreTouches =
+            isOverlayOpen && currentTool == WhiteboardTool.select;
 
         return IgnorePointer(
           ignoring: shouldIgnoreTouches,
@@ -528,7 +706,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          ...displayElements.whereType<ImageElement>().map((img) {
+                          ...displayElements.whereType<ImageElement>().map((
+                              img,
+                              ) {
                             final rawRect = img.getRawBounds();
                             final visualRect = Rect.fromCenter(
                               center: rawRect.center,
@@ -547,30 +727,46 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(6),
                                     boxShadow: [
-                                      BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4)),
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.25,
+                                        ),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
                                     ],
                                   ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(6),
                                     child: img.imageUrl.startsWith('http')
                                         ? Image.network(
-                                            img.imageUrl,
-                                            fit: BoxFit.contain,
-                                            filterQuality: FilterQuality.high,
-                                            errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
-                                          )
+                                      img.imageUrl,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.high,
+                                      errorBuilder: (c, e, s) =>
+                                      const Icon(
+                                        Icons.broken_image,
+                                        size: 50,
+                                      ),
+                                    )
                                         : Image.file(
-                                            File(img.imageUrl),
-                                            fit: BoxFit.contain,
-                                            filterQuality: FilterQuality.high,
-                                            errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 50),
-                                          ),
+                                      File(img.imageUrl),
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.high,
+                                      errorBuilder: (c, e, s) =>
+                                      const Icon(
+                                        Icons.broken_image,
+                                        size: 50,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             );
                           }),
-                          ...displayElements.whereType<DocumentElement>().map((doc) {
+                          ...displayElements.whereType<DocumentElement>().map((
+                              doc,
+                              ) {
                             final rawRect = doc.getRawBounds();
                             final visualRect = Rect.fromCenter(
                               center: rawRect.center,
@@ -582,13 +778,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                             final lowerName = doc.fileName.toLowerCase();
                             final isPptx =
                                 lowerPath.endsWith('.pptx') ||
-                                lowerName.endsWith('.pptx') ||
-                                lowerPath.endsWith('.ppt') ||
-                                lowerName.endsWith('.ppt');
+                                    lowerName.endsWith('.pptx') ||
+                                    lowerPath.endsWith('.ppt') ||
+                                    lowerName.endsWith('.ppt');
 
                             Widget content;
                             if (isPptx) {
-                              content = PptxViewer(file: File(doc.filePath), size: visualRect.size, slideIndex: doc.docPage ?? 0);
+                              content = PptxViewer(
+                                file: File(doc.filePath),
+                                size: visualRect.size,
+                                slideIndex: doc.docPage ?? 0,
+                              );
                             } else {
                               content = Container(
                                 color: Colors.white,
@@ -597,11 +797,19 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(Icons.description, size: 48, color: Colors.blueAccent),
+                                      const Icon(
+                                        Icons.description,
+                                        size: 48,
+                                        color: Colors.blueAccent,
+                                      ),
                                       const SizedBox(height: 8),
                                       Text(
                                         doc.fileName,
-                                        style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 14),
+                                        style: const TextStyle(
+                                          color: Colors.black87,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
                                         textAlign: TextAlign.center,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
@@ -619,7 +827,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                               height: visualRect.height,
                               child: Transform.rotate(
                                 angle: doc.rotation,
-                                child: ClipRRect(borderRadius: BorderRadius.circular(4), child: content),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: content,
+                                ),
                               ),
                             );
                           }),
@@ -638,7 +849,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                         willChange: true,
                         painter: WhiteboardPainter(
                           elements: const [],
-                          activeElements: _pointerManager.activeElements.values.toList(),
+                          activeElements: _pointerManager.activeElements.values
+                              .toList(),
                           lassoPath: lassoPath ?? _pointerManager.currentLasso,
                           selectedIds: const {},
                           panOffset: panOffset,
@@ -649,35 +861,60 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                   ),
                 ),
                 // Eraser circle overlay
-                ValueListenableBuilder<int>(
-                  valueListenable: _pointerManager.activeLayerPulse,
-                  builder: (context, _, _) {
-                    if (_pointerManager.isUsingGestureEraser) {
-                      final center = _pointerManager.gestureCenter;
-                      if (center == null) return const SizedBox.shrink();
-                      final r = _pointerManager.gestureEraseRadius();
-                      return Positioned(
-                        left: center.dx + panOffset.dx - r,
-                        top: center.dy + panOffset.dy - r,
-                        child: _eraserCircle(radius: r, borderWidth: 2.2, minIcon: 24, maxIcon: 48, iconFactor: 0.45),
-                      );
-                    }
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _pointerManager.activeLayerPulse,
+                      builder: (context, _, _) {
+                        if (_pointerManager.isUsingGestureEraser) {
+                          final center = _pointerManager.gestureCenter;
+                          if (center == null) return const SizedBox.shrink();
+                          final r = _pointerManager.gestureEraseRadius();
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                left: center.dx + panOffset.dx - r,
+                                top: center.dy + panOffset.dy - r,
+                                child: _eraserCircle(
+                                  radius: r,
+                                  borderWidth: 2.2,
+                                  minIcon: 24,
+                                  maxIcon: 48,
+                                  iconFactor: 0.45,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
 
-                    if (provider.currentTool != WhiteboardTool.eraser || _pointerManager.eraserPositions.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
+                        if (provider.currentTool != WhiteboardTool.eraser ||
+                            _pointerManager.eraserPositions.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
 
-                    final double radius = provider.eraserSize;
-                    return Stack(
-                      children: _pointerManager.eraserPositions.values.map((pos) {
-                        return Positioned(
-                          left: pos.dx + panOffset.dx - radius,
-                          top: pos.dy + panOffset.dy - radius,
-                          child: _eraserCircle(radius: radius, borderWidth: 1.8, minIcon: 12, maxIcon: 32, iconFactor: 0.42),
+                        final double radius = provider.eraserSize;
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: _pointerManager.eraserPositions.values.map((
+                              pos,
+                              ) {
+                            return Positioned(
+                              left: pos.dx + panOffset.dx - radius,
+                              top: pos.dy + panOffset.dy - radius,
+                              child: _eraserCircle(
+                                radius: radius,
+                                borderWidth: 1.8,
+                                minIcon: 12,
+                                maxIcon: 32,
+                                iconFactor: 0.42,
+                              ),
+                            );
+                          }).toList(),
                         );
-                      }).toList(),
-                    );
-                  },
+                      },
+                    ),
+                  ),
                 ),
                 if (CanvasPointerManager.kDebugPointerInfo)
                   ValueListenableBuilder<int>(
@@ -698,7 +935,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final mq = MediaQuery.of(context);
     final pxMm = _pointerManager.pxPerMm;
     final freshPointers = _pointerManager.freshTouchPointers();
-    final msSincePalm = _pointerManager.lastPalmSeen != null ? DateTime.now().difference(_pointerManager.lastPalmSeen!).inMilliseconds : -1;
+    final msSincePalm = _pointerManager.lastPalmSeen != null
+        ? DateTime.now()
+        .difference(_pointerManager.lastPalmSeen!)
+        .inMilliseconds
+        : -1;
 
     return Positioned(
       top: 12,
@@ -710,7 +951,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.7), width: 1.5),
+            border: Border.all(
+              color: Colors.cyanAccent.withValues(alpha: 0.7),
+              width: 1.5,
+            ),
             boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 8)],
           ),
           child: Column(
@@ -723,40 +967,77 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                   SizedBox(width: 6),
                   Text(
                     'Touch & Palm Diagnostics (Round 4)',
-                    style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                    style: TextStyle(
+                      color: Colors.cyanAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
                   ),
                 ],
               ),
               const Divider(color: Colors.white24, height: 10),
               Text(
                 'Screen: ${mq.size.width.toStringAsFixed(0)}x${mq.size.height.toStringAsFixed(0)} | DPR: ${mq.devicePixelRatio.toStringAsFixed(1)} | px/mm: ${pxMm.toStringAsFixed(2)}',
-                style: const TextStyle(color: Colors.amberAccent, fontSize: 9, fontFamily: 'monospace'),
+                style: const TextStyle(
+                  color: Colors.amberAccent,
+                  fontSize: 9,
+                  fontFamily: 'monospace',
+                ),
               ),
               Text(
                 'Fresh: ${freshPointers.length} | Raw: ${_pointerManager.pointers.length} | GhostPruned: ${_pointerManager.prunedGhostCount} | NativeCnt: ${_pointerManager.nativePointerCount}',
-                style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Text(
                 'EraserMode: ${_pointerManager.isUsingGestureEraser} | MsSincePalm: ${msSincePalm >= 0 ? "${msSincePalm}ms" : "none"}',
-                style: const TextStyle(color: Colors.lightGreenAccent, fontSize: 9.5, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: Colors.lightGreenAccent,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Text(
                 'Cancels: ${_pointerManager.cancelEventCount} | Last: ${_pointerManager.lastCancelInfo}',
-                style: const TextStyle(color: Colors.orangeAccent, fontSize: 9, fontFamily: 'monospace'),
+                style: const TextStyle(
+                  color: Colors.orangeAccent,
+                  fontSize: 9,
+                  fontFamily: 'monospace',
+                ),
               ),
               const SizedBox(height: 6),
               ...freshPointers.map((p) {
                 final isP = _pointerManager.isPalm(p);
                 final hint = _pointerManager.nativeTouchHints[p.pointer];
-                final nativeStr = hint != null ? 'Native: tool=${hint['toolType']} cnl=${hint['isCanceled']}' : 'Native: --';
+                final nativeStr = hint != null
+                    ? 'Native: tool=${hint['toolType']} cnl=${hint['isCanceled']}'
+                    : 'Native: --';
+                final bool isB = max(p.radiusMajor, p.radiusMinor) >=
+                        CanvasPointerManager.kBackhandRadiusMin ||
+                    p.size >= CanvasPointerManager.kBackhandSizeMin;
                 final String reason = isP
-                    ? (max(p.radiusMajor, p.radiusMinor) >= CanvasPointerManager.kPalmRadiusMajorMin ? "Radius" : "Size")
-                    : (freshPointers.length >= CanvasPointerManager.kPalmClusterMinPoints ? "Cluster" : "Finger");
+                    ? (max(p.radiusMajor, p.radiusMinor) >=
+                            CanvasPointerManager.kPalmRadiusMajorMin
+                        ? "Palm"
+                        : (isB ? "Backhand" : "Size"))
+                    : (freshPointers.length >=
+                            CanvasPointerManager.kPalmClusterMinPoints
+                        ? "Cluster"
+                        : "Finger");
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Text(
                     '#${p.pointer} | ${p.kind.name} | R:${max(p.radiusMajor, p.radiusMinor).toStringAsFixed(1)} | Sz:${p.size.toStringAsFixed(4)} | Palm:$isP ($reason)\n $nativeStr',
-                    style: TextStyle(color: isP ? Colors.yellowAccent : Colors.lightGreenAccent, fontSize: 9, fontFamily: 'monospace'),
+                    style: TextStyle(
+                      color: isP
+                          ? Colors.yellowAccent
+                          : Colors.lightGreenAccent,
+                      fontSize: 9,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 );
               }),
@@ -766,4 +1047,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       ),
     );
   }
+}
+
+/// Per-stroke nib detection tracker.
+class _NibTrack {
+  int valid = 0; // readings with a usable radius
+  int thickCount = 0; // readings above threshold
+  int thickStreak = 0; // consecutive clearly-thick readings
+  bool locked = false; // initial voting window finished
 }

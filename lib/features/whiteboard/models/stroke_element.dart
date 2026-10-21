@@ -7,9 +7,9 @@ enum PenType { pen, fountainPen, brush, marker }
 
 class StrokeElement extends BoardElement {
   final List<Offset> points;
-  final Color color;
-  final double strokeWidth;
-  final PenType penType;
+  Color color;
+  double strokeWidth;
+  PenType penType;
 
   StrokeElement({
     required super.id,
@@ -22,6 +22,13 @@ class StrokeElement extends BoardElement {
     super.scale,
     super.docPage,
   });
+
+  void updateStyling({Color? newColor, double? newStrokeWidth, PenType? newPenType}) {
+    if (newColor != null) color = newColor;
+    if (newStrokeWidth != null) strokeWidth = newStrokeWidth;
+    if (newPenType != null) penType = newPenType;
+    invalidatePath();
+  }
 
   Path? _cachedPath;
   List<double>? _cachedWidths;
@@ -159,19 +166,11 @@ class StrokeElement extends BoardElement {
       final last = points.last;
       final dx = p.dx - last.dx;
       final dy = p.dy - last.dy;
-      // Adaptive distance thresholding for jitter reduction on both thin and thick strokes
-      final double minDistSq = strokeWidth > 4.0 ? 0.6 : 0.15;
-      if (dx * dx + dy * dy < minDistSq) return false;
+      // Filter out duplicate hardware events (< 0.2px squared distance)
+      if (dx * dx + dy * dy < 0.2) return false;
     }
 
-    // Smooth incoming point with moving average against last point for ultra-smooth curve geometry
-    Offset smoothedPoint = p;
-    if (points.isNotEmpty) {
-      final last = points.last;
-      smoothedPoint = Offset(last.dx * 0.2 + p.dx * 0.8, last.dy * 0.2 + p.dy * 0.8);
-    }
-
-    points.add(smoothedPoint);
+    points.add(p);
     _appendWidthForNewPoint();
 
     // O(1) Incremental Path Appending with Quadratic Bezier

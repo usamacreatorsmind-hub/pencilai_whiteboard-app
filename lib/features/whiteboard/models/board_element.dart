@@ -7,6 +7,7 @@ import 'document_element.dart';
 import 'text_element.dart';
 import 'table_element.dart';
 import 'mind_map_element.dart';
+import 'chemical_element_element.dart';
 
 abstract class BoardElement {
   final String id;
@@ -44,6 +45,8 @@ abstract class BoardElement {
         return TableElement.fromJson(json);
       case 'mindmap':
         return MindMapElement.fromJson(json);
+      case 'chemical_element':
+        return ChemicalElementElement.fromJson(json);
       default:
         throw Exception('Unknown BoardElement type: $type');
     }
@@ -90,6 +93,9 @@ abstract class BoardElement {
     } else if (this is MindMapElement) {
       final mm = this as MindMapElement;
       bounds = Rect.fromLTWH(mm.position.dx, mm.position.dy, mm.size.width, mm.size.height);
+    } else if (this is ChemicalElementElement) {
+      final ce = this as ChemicalElementElement;
+      bounds = Rect.fromLTWH(ce.position.dx, ce.position.dy, ce.size.width, ce.size.height);
     } else {
       bounds = Rect.fromLTWH(position.dx, position.dy, 100, 100);
     }

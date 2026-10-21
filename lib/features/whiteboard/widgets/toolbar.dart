@@ -7,8 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdfx/pdfx.dart';
 import 'package:uuid/uuid.dart';
 import '../state/whiteboard_provider.dart';
 import '../models/shape_element.dart';
@@ -19,6 +17,7 @@ import '../models/mind_map_element.dart';
 import '../services/document_import_service.dart';
 import '../services/ppt_conversion_service.dart';
 import 'table_picker_dialog.dart';
+import 'periodic_table_dialog.dart';
 
 class WhiteboardToolbar extends StatelessWidget {
   final VoidCallback? onOpenRuler;
@@ -26,7 +25,13 @@ class WhiteboardToolbar extends StatelessWidget {
   final VoidCallback? onOpenSetSquare;
   final VoidCallback? onOpenCompass;
 
-  const WhiteboardToolbar({super.key, this.onOpenRuler, this.onOpenProtractor, this.onOpenSetSquare, this.onOpenCompass});
+  const WhiteboardToolbar({
+    super.key,
+    this.onOpenRuler,
+    this.onOpenProtractor,
+    this.onOpenSetSquare,
+    this.onOpenCompass,
+  });
 
   void _showColorPicker(BuildContext context, WhiteboardProvider provider) {
     showDialog(
@@ -34,14 +39,25 @@ class WhiteboardToolbar extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Pick a color'),
         content: SingleChildScrollView(
-          child: ColorPicker(pickerColor: provider.currentColor, onColorChanged: provider.setColor),
+          child: ColorPicker(
+            pickerColor: provider.currentColor,
+            onColorChanged: provider.setColor,
+          ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Done'))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Done'),
+          ),
+        ],
       ),
     );
   }
 
-  void _showBackgroundColorPicker(BuildContext context, WhiteboardProvider provider) {
+  void _showBackgroundColorPicker(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     Color tempSelectedColor = provider.canvasBackgroundColor;
 
     final List<Color> themeColors = [
@@ -80,12 +96,18 @@ class WhiteboardToolbar extends StatelessWidget {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: const Color(0xFFF8FAFC),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           titlePadding: const EdgeInsets.only(top: 16),
           title: const Center(
             child: Text(
               'Background',
-              style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           content: SizedBox(
@@ -96,7 +118,11 @@ class WhiteboardToolbar extends StatelessWidget {
               children: [
                 const Text(
                   'Color',
-                  style: TextStyle(color: Color(0xFF334155), fontSize: 12, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Color(0xFF334155),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 // Color Grid (4 rows x 6 columns, compact)
@@ -115,14 +141,28 @@ class WhiteboardToolbar extends StatelessWidget {
                     final isSelected = tempSelectedColor.value == color.value;
 
                     return GestureDetector(
-                      onTap: () => setDialogState(() => tempSelectedColor = color),
+                      onTap: () =>
+                          setDialogState(() => tempSelectedColor = color),
                       child: Container(
                         decoration: BoxDecoration(
                           color: color,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: isSelected ? const Color(0xFF0D9488) : Colors.black12, width: isSelected ? 2.0 : 1.0),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF0D9488)
+                                : Colors.black12,
+                            width: isSelected ? 2.0 : 1.0,
+                          ),
                         ),
-                        child: isSelected ? const Center(child: Icon(Icons.check_circle, size: 16, color: Color(0xFF0D9488))) : null,
+                        child: isSelected
+                            ? const Center(
+                                child: Icon(
+                                  Icons.check_circle,
+                                  size: 16,
+                                  color: Color(0xFF0D9488),
+                                ),
+                              )
+                            : null,
                       ),
                     );
                   },
@@ -137,11 +177,19 @@ class WhiteboardToolbar extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFF334155),
                 side: const BorderSide(color: Color(0xFF94A3B8)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 8,
+                ),
                 minimumSize: const Size(70, 36),
               ),
-              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              ),
             ),
             const SizedBox(width: 8),
             ElevatedButton(
@@ -152,12 +200,20 @@ class WhiteboardToolbar extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0D9488),
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 8,
+                ),
                 minimumSize: const Size(70, 36),
                 elevation: 0,
               ),
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              child: const Text(
+                'OK',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              ),
             ),
           ],
         ),
@@ -168,7 +224,8 @@ class WhiteboardToolbar extends StatelessWidget {
   static final GlobalKey _penButtonKey = GlobalKey();
 
   void _showPenSettings(BuildContext context, WhiteboardProvider provider) {
-    final RenderBox? renderBox = _penButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? renderBox =
+        _penButtonKey.currentContext?.findRenderObject() as RenderBox?;
     Offset position = Offset.zero;
     Size buttonSize = Size.zero;
     if (renderBox != null) {
@@ -187,7 +244,8 @@ class WhiteboardToolbar extends StatelessWidget {
         const double dialogHeight = 265.0;
 
         final screenSize = MediaQuery.of(context).size;
-        double left = position.dx + (buttonSize.width / 2) - (dialogWidth / 2) + 35.0;
+        double left =
+            position.dx + (buttonSize.width / 2) - (dialogWidth / 2) + 35.0;
         left = left.clamp(12.0, screenSize.width - dialogWidth - 12.0);
         double top = position.dy - dialogHeight + 10.0;
         if (top < 12.0) top = 12.0;
@@ -203,7 +261,11 @@ class WhiteboardToolbar extends StatelessWidget {
                   tween: Tween(begin: 0.85, end: 1.0),
                   duration: const Duration(milliseconds: 150),
                   builder: (context, scale, child) {
-                    return Transform.scale(scale: scale, alignment: Alignment.bottomCenter, child: child);
+                    return Transform.scale(
+                      scale: scale,
+                      alignment: Alignment.bottomCenter,
+                      child: child,
+                    );
                   },
                   child: Container(
                     width: dialogWidth,
@@ -211,9 +273,17 @@ class WhiteboardToolbar extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                      border: Border.all(
+                        color: const Color(0xFFCBD5E1),
+                        width: 1.2,
+                      ),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 16, spreadRadius: 1, offset: const Offset(0, 4)),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 16,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 4),
+                        ),
                       ],
                     ),
                     child: StatefulBuilder(
@@ -226,17 +296,25 @@ class WhiteboardToolbar extends StatelessWidget {
                             Container(
                               height: 34,
                               padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(10)),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
                               child: Row(
                                 children: [
                                   Expanded(
                                     child: _PenProfileTab(
                                       title: 'Thin Pen',
-                                      subtitle: '${provider.thinStrokeWidth.toInt()}px',
+                                      subtitle:
+                                          '${provider.thinStrokeWidth.toInt()}px',
                                       color: provider.thinColor,
-                                      isSelected: provider.activePenProfile == PenProfile.thin,
+                                      isSelected:
+                                          provider.activePenProfile ==
+                                          PenProfile.thin,
                                       onTap: () {
-                                        provider.setActivePenProfile(PenProfile.thin);
+                                        provider.setActivePenProfile(
+                                          PenProfile.thin,
+                                        );
                                         setDialogState(() {});
                                       },
                                     ),
@@ -245,11 +323,16 @@ class WhiteboardToolbar extends StatelessWidget {
                                   Expanded(
                                     child: _PenProfileTab(
                                       title: 'Thick Pen',
-                                      subtitle: '${provider.thickStrokeWidth.toInt()}px',
+                                      subtitle:
+                                          '${provider.thickStrokeWidth.toInt()}px',
                                       color: provider.thickColor,
-                                      isSelected: provider.activePenProfile == PenProfile.thick,
+                                      isSelected:
+                                          provider.activePenProfile ==
+                                          PenProfile.thick,
                                       onTap: () {
-                                        provider.setActivePenProfile(PenProfile.thick);
+                                        provider.setActivePenProfile(
+                                          PenProfile.thick,
+                                        );
                                         setDialogState(() {});
                                       },
                                     ),
@@ -267,7 +350,8 @@ class WhiteboardToolbar extends StatelessWidget {
                                   label: 'Pen',
                                   icon: LucideIcons.pencil,
                                   color: Colors.blue,
-                                  isSelected: provider.currentPenType == PenType.pen,
+                                  isSelected:
+                                      provider.currentPenType == PenType.pen,
                                   onTap: () {
                                     provider.setPenType(PenType.pen);
                                     setDialogState(() {});
@@ -277,7 +361,9 @@ class WhiteboardToolbar extends StatelessWidget {
                                   label: 'Fountain',
                                   icon: LucideIcons.penTool,
                                   color: Colors.purple,
-                                  isSelected: provider.currentPenType == PenType.fountainPen,
+                                  isSelected:
+                                      provider.currentPenType ==
+                                      PenType.fountainPen,
                                   onTap: () {
                                     provider.setPenType(PenType.fountainPen);
                                     setDialogState(() {});
@@ -287,7 +373,8 @@ class WhiteboardToolbar extends StatelessWidget {
                                   label: 'Brush',
                                   icon: LucideIcons.paintbrush,
                                   color: Colors.orange,
-                                  isSelected: provider.currentPenType == PenType.brush,
+                                  isSelected:
+                                      provider.currentPenType == PenType.brush,
                                   onTap: () {
                                     provider.setPenType(PenType.brush);
                                     setDialogState(() {});
@@ -297,7 +384,8 @@ class WhiteboardToolbar extends StatelessWidget {
                                   label: 'Marker',
                                   icon: LucideIcons.highlighter,
                                   color: Colors.green,
-                                  isSelected: provider.currentPenType == PenType.marker,
+                                  isSelected:
+                                      provider.currentPenType == PenType.marker,
                                   onTap: () {
                                     provider.setPenType(PenType.marker);
                                     setDialogState(() {});
@@ -313,11 +401,19 @@ class WhiteboardToolbar extends StatelessWidget {
                               children: [
                                 const Text(
                                   'Thickness',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF334155)),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    color: Color(0xFF334155),
+                                  ),
                                 ),
                                 Text(
                                   '${provider.strokeWidth.toInt()}px',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.blue),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    color: Colors.blue,
+                                  ),
                                 ),
                               ],
                             ),
@@ -327,12 +423,18 @@ class WhiteboardToolbar extends StatelessWidget {
                                 data: SliderTheme.of(context).copyWith(
                                   activeTrackColor: provider.currentColor,
                                   thumbColor: provider.currentColor,
-                                  overlayColor: provider.currentColor.withValues(alpha: 0.2),
+                                  overlayColor: provider.currentColor
+                                      .withValues(alpha: 0.2),
                                   trackHeight: 3,
-                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                  thumbShape: const RoundSliderThumbShape(
+                                    enabledThumbRadius: 6,
+                                  ),
                                 ),
                                 child: Slider(
-                                  value: provider.strokeWidth.clamp(provider.minStrokeWidth, provider.maxStrokeWidth),
+                                  value: provider.strokeWidth.clamp(
+                                    provider.minStrokeWidth,
+                                    provider.maxStrokeWidth,
+                                  ),
                                   min: provider.minStrokeWidth,
                                   max: provider.maxStrokeWidth,
                                   onChanged: (value) {
@@ -349,16 +451,22 @@ class WhiteboardToolbar extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                ),
                               ),
                               child: Container(
                                 height: provider.strokeWidth.clamp(1.0, 14.0),
                                 width: 100,
                                 decoration: BoxDecoration(
-                                  color: provider.currentColor.value == Colors.white.value
+                                  color:
+                                      provider.currentColor.value ==
+                                          Colors.white.value
                                       ? const Color(0xFF1E293B)
                                       : provider.currentColor,
-                                  borderRadius: BorderRadius.circular(provider.strokeWidth / 2),
+                                  borderRadius: BorderRadius.circular(
+                                    provider.strokeWidth / 2,
+                                  ),
                                 ),
                               ),
                             ),
@@ -384,7 +492,9 @@ class WhiteboardToolbar extends StatelessWidget {
                                 ].map(
                                   (color) => _ColorButton(
                                     color: color,
-                                    isSelected: provider.currentColor.value == color.value,
+                                    isSelected:
+                                        provider.currentColor.value ==
+                                        color.value,
                                     onTap: () {
                                       provider.setColor(color);
                                       setDialogState(() {});
@@ -392,20 +502,32 @@ class WhiteboardToolbar extends StatelessWidget {
                                   ),
                                 ),
                                 GestureDetector(
-                                  onTap: () => _showColorPicker(context, provider),
+                                  onTap: () =>
+                                      _showColorPicker(context, provider),
                                   child: Container(
                                     width: 25,
                                     height: 25,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                      border: Border.all(
+                                        color: const Color(0xFFCBD5E1),
+                                      ),
                                       gradient: const LinearGradient(
-                                        colors: [Colors.red, Colors.green, Colors.blue, Colors.yellow],
+                                        colors: [
+                                          Colors.red,
+                                          Colors.green,
+                                          Colors.blue,
+                                          Colors.yellow,
+                                        ],
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
                                       ),
                                     ),
-                                    child: const Icon(Icons.colorize, size: 12, color: Colors.white),
+                                    child: const Icon(
+                                      Icons.colorize,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -426,97 +548,63 @@ class WhiteboardToolbar extends StatelessWidget {
 
   static final GlobalKey _toolboxButtonKey = GlobalKey();
 
-  Future<void> _openPeriodicTable(BuildContext context, WhiteboardProvider provider) async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final screenSize = MediaQuery.of(context).size;
-
-    try {
-      final byteData = await rootBundle.load('assets/periodic-table.pdf');
-
-      final tempDir = await getTemporaryDirectory();
-      final tempPdfPath = '${tempDir.path}/periodic_table_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final tempPdfFile = File(tempPdfPath);
-      await tempPdfFile.writeAsBytes(byteData.buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
-
-      final pdfDoc = await PdfDocument.openFile(tempPdfFile.path);
-      if (pdfDoc.pagesCount == 0) {
-        await pdfDoc.close();
-        throw Exception("Periodic Table PDF is empty.");
-      }
-
-      final page = await pdfDoc.getPage(1);
-      final pageImage = await page.render(width: page.width * 3.0, height: page.height * 3.0, format: PdfPageImageFormat.png);
-      await page.close();
-      await pdfDoc.close();
-
-      if (pageImage != null && pageImage.bytes.isNotEmpty) {
-        final imagePath = '${tempDir.path}/periodic_table_rendered_${DateTime.now().millisecondsSinceEpoch}.png';
-        final imageFile = File(imagePath);
-        await imageFile.writeAsBytes(pageImage.bytes);
-
-        double natWidth = (pageImage.width ?? 1920).toDouble();
-        double natHeight = (pageImage.height ?? 1080).toDouble();
-        double aspectRatio = natWidth > 0 && natHeight > 0 ? natWidth / natHeight : (16.0 / 9.0);
-
-        double targetWidth = screenSize.width * 0.7;
-        double targetHeight = targetWidth / aspectRatio;
-
-        if (targetHeight > screenSize.height * 0.75) {
-          targetHeight = screenSize.height * 0.75;
-          targetWidth = targetHeight * aspectRatio;
-        }
-
-        final Offset centerPosition = provider.screenToCanvas(Offset((screenSize.width - targetWidth) / 2, (screenSize.height - targetHeight) / 2));
-
-        final element = ImageElement(
-          id: const Uuid().v4(),
-          position: centerPosition,
-          imageUrl: imagePath,
-          size: Size(targetWidth, targetHeight),
-        );
-
-        provider.addElement(element);
-        provider.selectElement(element.id);
-        provider.setTool(WhiteboardTool.select);
-      }
-    } catch (e) {
-      debugPrint("Error opening Periodic Table PDF: $e");
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.redAccent,
-          content: Text('Failed to load Periodic Table PDF: $e'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
+  void _openPeriodicTable(BuildContext context, WhiteboardProvider provider) {
+    PeriodicTableDialog.show(context, provider);
   }
 
   void _createMindMap(BuildContext context, WhiteboardProvider provider) {
-    final screenSize = MediaQuery.maybeOf(context)?.size ?? const Size(1280, 720);
-    final centerPos = provider.screenToCanvas(Offset(max(50.0, screenSize.width / 2 - 200), max(50.0, screenSize.height / 2 - 120)));
+    final screenSize =
+        MediaQuery.maybeOf(context)?.size ?? const Size(1280, 720);
+    final centerPos = provider.screenToCanvas(
+      Offset(
+        max(50.0, screenSize.width / 2 - 200),
+        max(50.0, screenSize.height / 2 - 120),
+      ),
+    );
 
     final rootNode = MindMapNode(
       id: const Uuid().v4(),
       text: '',
       fillColor: const Color(0xFF00BFA5),
       children: [
-        MindMapNode(id: const Uuid().v4(), text: '', fillColor: const Color(0xFF00BFA5)),
-        MindMapNode(id: const Uuid().v4(), text: '', fillColor: const Color(0xFF00BFA5)),
-        MindMapNode(id: const Uuid().v4(), text: '', fillColor: const Color(0xFF00BFA5)),
+        MindMapNode(
+          id: const Uuid().v4(),
+          text: '',
+          fillColor: const Color(0xFF00BFA5),
+        ),
+        MindMapNode(
+          id: const Uuid().v4(),
+          text: '',
+          fillColor: const Color(0xFF00BFA5),
+        ),
+        MindMapNode(
+          id: const Uuid().v4(),
+          text: '',
+          fillColor: const Color(0xFF00BFA5),
+        ),
       ],
     );
 
-    final mindMapElement = MindMapElement(id: const Uuid().v4(), position: centerPos, root: rootNode, size: const Size(420, 260));
+    final mindMapElement = MindMapElement(
+      id: const Uuid().v4(),
+      position: centerPos,
+      root: rootNode,
+      size: const Size(420, 260),
+    );
 
     mindMapElement.updateLayout();
 
     provider.addElement(mindMapElement);
-    provider.selectElement(mindMapElement.id);
-    provider.setTool(WhiteboardTool.select);
+    provider.clearSelection();
+    provider.setTool(WhiteboardTool.pen);
   }
 
-  void _openTablePickerDialog(BuildContext context, WhiteboardProvider provider) {
-    final screenSize = MediaQuery.maybeOf(context)?.size ?? const Size(1280, 720);
+  void _openTablePickerDialog(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
+    final screenSize =
+        MediaQuery.maybeOf(context)?.size ?? const Size(1280, 720);
 
     showDialog(
       context: context,
@@ -532,12 +620,21 @@ class WhiteboardToolbar extends StatelessWidget {
 
           final tableElement = TableElement(
             id: const Uuid().v4(),
-            position: provider.screenToCanvas(Offset(posX.clamp(20.0, max(20.0, screenSize.width - tblW)), posY.clamp(20.0, max(20.0, screenSize.height - tblH)))),
+            position: provider.screenToCanvas(
+              Offset(
+                posX.clamp(20.0, max(20.0, screenSize.width - tblW)),
+                posY.clamp(20.0, max(20.0, screenSize.height - tblH)),
+              ),
+            ),
             rows: rows,
             cols: cols,
             size: Size(tblW, tblH),
-            color: provider.currentColor == Colors.white ? const Color(0xFF1E293B) : provider.currentColor,
-            strokeWidth: provider.strokeWidth < 2.0 ? 2.0 : provider.strokeWidth,
+            color: provider.currentColor == Colors.white
+                ? const Color(0xFF1E293B)
+                : provider.currentColor,
+            strokeWidth: provider.strokeWidth < 2.0
+                ? 2.0
+                : provider.strokeWidth,
           );
 
           provider.addElement(tableElement);
@@ -549,7 +646,8 @@ class WhiteboardToolbar extends StatelessWidget {
   }
 
   void _showRulerSubMenu(BuildContext context, WhiteboardProvider provider) {
-    final RenderBox? renderBox = _toolboxButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? renderBox =
+        _toolboxButtonKey.currentContext?.findRenderObject() as RenderBox?;
     Offset position = Offset.zero;
     Size buttonSize = Size.zero;
     if (renderBox != null) {
@@ -581,12 +679,24 @@ class WhiteboardToolbar extends StatelessWidget {
                 color: Colors.transparent,
                 child: Container(
                   width: dialogWidth,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE2E8F0),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF64748B), width: 1.0),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 3))],
+                    border: Border.all(
+                      color: const Color(0xFF64748B),
+                      width: 1.0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -635,7 +745,9 @@ class WhiteboardToolbar extends StatelessWidget {
         return FadeTransition(
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.92, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            ),
             alignment: Alignment.bottomCenter,
             child: child,
           ),
@@ -645,7 +757,8 @@ class WhiteboardToolbar extends StatelessWidget {
   }
 
   void _showToolboxDialog(BuildContext context, WhiteboardProvider provider) {
-    final RenderBox? renderBox = _toolboxButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? renderBox =
+        _toolboxButtonKey.currentContext?.findRenderObject() as RenderBox?;
     Offset position = Offset.zero;
     Size buttonSize = Size.zero;
     if (renderBox != null) {
@@ -677,12 +790,24 @@ class WhiteboardToolbar extends StatelessWidget {
                 color: Colors.transparent,
                 child: Container(
                   width: dialogWidth,
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE2E8F0),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF64748B), width: 1.0),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 3))],
+                    border: Border.all(
+                      color: const Color(0xFF64748B),
+                      width: 1.0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -731,7 +856,9 @@ class WhiteboardToolbar extends StatelessWidget {
         return FadeTransition(
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.92, end: 1.0).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            ),
             alignment: Alignment.bottomCenter,
             child: child,
           ),
@@ -743,7 +870,8 @@ class WhiteboardToolbar extends StatelessWidget {
   static final GlobalKey _eraserButtonKey = GlobalKey();
 
   void _showEraserSettings(BuildContext context, WhiteboardProvider provider) {
-    final RenderBox? renderBox = _eraserButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final RenderBox? renderBox =
+        _eraserButtonKey.currentContext?.findRenderObject() as RenderBox?;
     Offset position = Offset.zero;
     Size buttonSize = Size.zero;
     if (renderBox != null) {
@@ -777,7 +905,11 @@ class WhiteboardToolbar extends StatelessWidget {
                   tween: Tween(begin: 0.8, end: 1.0),
                   duration: const Duration(milliseconds: 150),
                   builder: (context, scale, child) {
-                    return Transform.scale(scale: scale, alignment: Alignment.bottomCenter, child: child);
+                    return Transform.scale(
+                      scale: scale,
+                      alignment: Alignment.bottomCenter,
+                      child: child,
+                    );
                   },
                   child: Container(
                     width: dialogWidth,
@@ -785,9 +917,17 @@ class WhiteboardToolbar extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFCBD5E1), width: 1.0),
+                      border: Border.all(
+                        color: const Color(0xFFCBD5E1),
+                        width: 1.0,
+                      ),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 12, spreadRadius: 1, offset: const Offset(0, 3)),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.18),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 3),
+                        ),
                       ],
                     ),
                     child: StatefulBuilder(
@@ -800,11 +940,19 @@ class WhiteboardToolbar extends StatelessWidget {
                             children: [
                               const Text(
                                 'Eraser Size',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E293B)),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Color(0xFF1E293B),
+                                ),
                               ),
                               Text(
                                 '${provider.eraserSize.toInt()}px',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFF97316)),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Color(0xFFF97316),
+                                ),
                               ),
                             ],
                           ),
@@ -814,13 +962,22 @@ class WhiteboardToolbar extends StatelessWidget {
                               data: SliderTheme.of(context).copyWith(
                                 activeTrackColor: const Color(0xFFF97316),
                                 thumbColor: const Color(0xFFF97316),
-                                overlayColor: const Color(0xFFF97316).withValues(alpha: 0.2),
+                                overlayColor: const Color(
+                                  0xFFF97316,
+                                ).withValues(alpha: 0.2),
                                 trackHeight: 2.5,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7,
+                                ),
+                                overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 14,
+                                ),
                               ),
                               child: Slider(
-                                value: provider.eraserSize.clamp(provider.minEraserSize, provider.maxEraserSize),
+                                value: provider.eraserSize.clamp(
+                                  provider.minEraserSize,
+                                  provider.maxEraserSize,
+                                ),
                                 min: provider.minEraserSize,
                                 max: provider.maxEraserSize,
                                 onChanged: (value) {
@@ -841,28 +998,51 @@ class WhiteboardToolbar extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF8FAFC),
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                  ),
                                 ),
                                 child: Container(
-                                  width: (provider.eraserSize * 0.6).clamp(10.0, 32.0),
-                                  height: (provider.eraserSize * 0.6).clamp(10.0, 32.0),
+                                  width: (provider.eraserSize * 0.6).clamp(
+                                    10.0,
+                                    32.0,
+                                  ),
+                                  height: (provider.eraserSize * 0.6).clamp(
+                                    10.0,
+                                    32.0,
+                                  ),
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: const LinearGradient(
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
-                                      colors: [Color(0xFFFFFFFF), Color(0xFFF1F5F9)],
+                                      colors: [
+                                        Color(0xFFFFFFFF),
+                                        Color(0xFFF1F5F9),
+                                      ],
                                     ),
-                                    border: Border.all(color: const Color(0xFF94A3B8), width: 1.5),
+                                    border: Border.all(
+                                      color: const Color(0xFF94A3B8),
+                                      width: 1.5,
+                                    ),
                                     boxShadow: [
-                                      BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 5, offset: const Offset(0, 2)),
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.15,
+                                        ),
+                                        blurRadius: 5,
+                                        offset: const Offset(0, 2),
+                                      ),
                                     ],
                                   ),
                                   child: Center(
                                     child: Icon(
                                       LucideIcons.eraser,
                                       color: const Color(0xFF64748B),
-                                      size: (provider.eraserSize * 0.3).clamp(8.0, 16.0),
+                                      size: (provider.eraserSize * 0.3).clamp(
+                                        8.0,
+                                        16.0,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -871,13 +1051,21 @@ class WhiteboardToolbar extends StatelessWidget {
                               TextButton(
                                 onPressed: () => Navigator.of(context).pop(),
                                 style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 0,
+                                  ),
                                   minimumSize: const Size(44, 26),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 child: const Text(
                                   'Done',
-                                  style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFF97316), fontSize: 12),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFF97316),
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
                             ],
@@ -906,7 +1094,9 @@ class WhiteboardToolbar extends StatelessWidget {
             // bottom value se control karo ki kitna neeche chahiye
             insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             backgroundColor: const Color(0xFF1E293B),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             contentPadding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
             titlePadding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
             title: const TabBar(
@@ -915,7 +1105,10 @@ class WhiteboardToolbar extends StatelessWidget {
               unselectedLabelColor: Colors.grey,
               labelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
               tabs: [
-                Tab(text: '2D Shapes', icon: Icon(LucideIcons.shapes, size: 14)),
+                Tab(
+                  text: '2D Shapes',
+                  icon: Icon(LucideIcons.shapes, size: 14),
+                ),
                 Tab(text: '3D Shapes', icon: Icon(LucideIcons.box, size: 14)),
               ],
             ),
@@ -931,18 +1124,78 @@ class WhiteboardToolbar extends StatelessWidget {
                     crossAxisSpacing: 2,
                     childAspectRatio: 1.2,
                     children: [
-                      _ShapeTile(name: 'Line', type: ShapeType.line, icon: LucideIcons.minus, provider: provider),
-                      _ShapeTile(name: 'Rect', type: ShapeType.rectangle, icon: LucideIcons.square, provider: provider),
-                      _ShapeTile(name: 'Circle', type: ShapeType.circle, icon: LucideIcons.circle, provider: provider),
-                      _ShapeTile(name: 'Arrow', type: ShapeType.arrow, icon: LucideIcons.moveRight, provider: provider),
-                      _ShapeTile(name: 'Triangle', type: ShapeType.triangle, icon: LucideIcons.triangle, provider: provider),
-                      _ShapeTile(name: 'Star', type: ShapeType.star, icon: LucideIcons.star, provider: provider),
-                      _ShapeTile(name: 'Diamond', type: ShapeType.diamond, icon: LucideIcons.gem, provider: provider),
-                      _ShapeTile(name: 'Pentagon', type: ShapeType.pentagon, icon: LucideIcons.pentagon, provider: provider),
-                      _ShapeTile(name: 'Hexagon', type: ShapeType.hexagon, icon: LucideIcons.hexagon, provider: provider),
-                      _ShapeTile(name: 'Right Tri', type: ShapeType.rightTriangle, icon: LucideIcons.triangleRight, provider: provider),
-                      _ShapeTile(name: 'Parallelogram', type: ShapeType.parallelogram, icon: LucideIcons.boxSelect, provider: provider),
-                      _ShapeTile(name: 'Heart', type: ShapeType.heart, icon: LucideIcons.heart, provider: provider),
+                      _ShapeTile(
+                        name: 'Line',
+                        type: ShapeType.line,
+                        icon: LucideIcons.minus,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Rect',
+                        type: ShapeType.rectangle,
+                        icon: LucideIcons.square,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Circle',
+                        type: ShapeType.circle,
+                        icon: LucideIcons.circle,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Arrow',
+                        type: ShapeType.arrow,
+                        icon: LucideIcons.moveRight,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Triangle',
+                        type: ShapeType.triangle,
+                        icon: LucideIcons.triangle,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Star',
+                        type: ShapeType.star,
+                        icon: LucideIcons.star,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Diamond',
+                        type: ShapeType.diamond,
+                        icon: LucideIcons.gem,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Pentagon',
+                        type: ShapeType.pentagon,
+                        icon: LucideIcons.pentagon,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Hexagon',
+                        type: ShapeType.hexagon,
+                        icon: LucideIcons.hexagon,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Right Tri',
+                        type: ShapeType.rightTriangle,
+                        icon: LucideIcons.triangleRight,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Parallelogram',
+                        type: ShapeType.parallelogram,
+                        icon: LucideIcons.boxSelect,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Heart',
+                        type: ShapeType.heart,
+                        icon: LucideIcons.heart,
+                        provider: provider,
+                      ),
                     ],
                   ),
 
@@ -953,11 +1206,36 @@ class WhiteboardToolbar extends StatelessWidget {
                     crossAxisSpacing: 6,
                     childAspectRatio: 1.3,
                     children: [
-                      _ShapeTile(name: 'Cube 3D', type: ShapeType.cube3d, icon: LucideIcons.box, provider: provider),
-                      _ShapeTile(name: 'Cylinder 3D', type: ShapeType.cylinder3d, icon: LucideIcons.cylinder, provider: provider),
-                      _ShapeTile(name: 'Cone 3D', type: ShapeType.cone3d, icon: LucideIcons.cone, provider: provider),
-                      _ShapeTile(name: 'Pyramid 3D', type: ShapeType.pyramid3d, icon: LucideIcons.pyramid, provider: provider),
-                      _ShapeTile(name: 'Sphere 3D', type: ShapeType.sphere3d, icon: LucideIcons.globe, provider: provider),
+                      _ShapeTile(
+                        name: 'Cube 3D',
+                        type: ShapeType.cube3d,
+                        icon: LucideIcons.box,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Cylinder 3D',
+                        type: ShapeType.cylinder3d,
+                        icon: LucideIcons.cylinder,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Cone 3D',
+                        type: ShapeType.cone3d,
+                        icon: LucideIcons.cone,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Pyramid 3D',
+                        type: ShapeType.pyramid3d,
+                        icon: LucideIcons.pyramid,
+                        provider: provider,
+                      ),
+                      _ShapeTile(
+                        name: 'Sphere 3D',
+                        type: ShapeType.sphere3d,
+                        icon: LucideIcons.globe,
+                        provider: provider,
+                      ),
                     ],
                   ),
                 ],
@@ -969,13 +1247,19 @@ class WhiteboardToolbar extends StatelessWidget {
     );
   }
 
-  void _showClearConfirmation(BuildContext context, WhiteboardProvider provider) {
+  void _showClearConfirmation(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
         title: const Text('Clear All?', style: TextStyle(color: Colors.white)),
-        content: const Text('This will erase everything on the current page.', style: TextStyle(color: Colors.grey)),
+        content: const Text(
+          'This will erase everything on the current page.',
+          style: TextStyle(color: Colors.grey),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -993,7 +1277,10 @@ class WhiteboardToolbar extends StatelessWidget {
     );
   }
 
-  Future<void> _pickImage(BuildContext context, WhiteboardProvider provider) async {
+  Future<void> _pickImage(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) async {
     final screenSize = MediaQuery.of(context).size;
     final picker = ImagePicker();
     final image = await picker.pickImage(source: ImageSource.gallery);
@@ -1005,13 +1292,22 @@ class WhiteboardToolbar extends StatelessWidget {
         double natWidth = decodedImage.width.toDouble();
         double natHeight = decodedImage.height.toDouble();
 
-        double aspectRatio = natWidth > 0 && natHeight > 0 ? natWidth / natHeight : (screenSize.width / screenSize.height);
+        double aspectRatio = natWidth > 0 && natHeight > 0
+            ? natWidth / natHeight
+            : (screenSize.width / screenSize.height);
 
         // Edge-to-Edge from top, left, and right
         double width = screenSize.width;
         double height = width / aspectRatio;
 
-        provider.addElement(ImageElement(id: const Uuid().v4(), position: provider.screenToCanvas(Offset.zero), imageUrl: image.path, size: Size(width, height)));
+        provider.addElement(
+          ImageElement(
+            id: const Uuid().v4(),
+            position: provider.screenToCanvas(Offset.zero),
+            imageUrl: image.path,
+            size: Size(width, height),
+          ),
+        );
       } catch (e) {
         provider.addElement(
           ImageElement(
@@ -1025,7 +1321,10 @@ class WhiteboardToolbar extends StatelessWidget {
     }
   }
 
-  Future<void> _pickDocument(BuildContext context, WhiteboardProvider provider) async {
+  Future<void> _pickDocument(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final screenSize = MediaQuery.of(context).size;
 
@@ -1052,7 +1351,9 @@ class WhiteboardToolbar extends StatelessWidget {
               canPop: false,
               child: AlertDialog(
                 backgroundColor: const Color(0xFF1E1E1E),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 content: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: Column(
@@ -1065,18 +1366,23 @@ class WhiteboardToolbar extends StatelessWidget {
                         builder: (context, status, _) => Text(
                           status,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
                       ValueListenableBuilder<double>(
                         valueListenable: progressNotifier,
-                        builder: (context, progress, _) => LinearProgressIndicator(
-                          value: progress > 0 ? progress : null,
-                          backgroundColor: Colors.white12,
-                          color: Colors.blueAccent,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
+                        builder: (context, progress, _) =>
+                            LinearProgressIndicator(
+                              value: progress > 0 ? progress : null,
+                              backgroundColor: Colors.white12,
+                              color: Colors.blueAccent,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                       ),
                     ],
                   ),
@@ -1100,7 +1406,10 @@ class WhiteboardToolbar extends StatelessWidget {
           );
 
           if (context.mounted) {
-            Navigator.of(context, rootNavigator: true).pop(); // Close progress dialog
+            Navigator.of(
+              context,
+              rootNavigator: true,
+            ).pop(); // Close progress dialog
           }
 
           if (pages.isNotEmpty) {
@@ -1108,7 +1417,10 @@ class WhiteboardToolbar extends StatelessWidget {
           }
         } catch (e) {
           if (context.mounted) {
-            Navigator.of(context, rootNavigator: true).pop(); // Close progress dialog
+            Navigator.of(
+              context,
+              rootNavigator: true,
+            ).pop(); // Close progress dialog
           }
           scaffoldMessenger.showSnackBar(
             SnackBar(
@@ -1171,10 +1483,18 @@ class WhiteboardToolbar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFE2E8F0), // Light frosted container matching image
+        color: const Color(
+          0xFFE2E8F0,
+        ), // Light frosted container matching image
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF64748B), width: 1.2),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 3))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: IntrinsicHeight(
         child: Row(
@@ -1232,11 +1552,18 @@ class WhiteboardToolbar extends StatelessWidget {
               iconSize: iconSize,
               onTap: () => provider.setTool(WhiteboardTool.preview),
             ),
-            const VerticalDivider(color: Color(0xFFCBD5E1), width: 8, indent: 4, endIndent: 4),
+            const VerticalDivider(
+              color: Color(0xFFCBD5E1),
+              width: 8,
+              indent: 4,
+              endIndent: 4,
+            ),
 
             // Shape & Extras Group
             _ToolButton(
-              icon: provider.currentTool == WhiteboardTool.shape ? _getShapeIcon(provider.currentShapeType) : LucideIcons.shapes,
+              icon: provider.currentTool == WhiteboardTool.shape
+                  ? _getShapeIcon(provider.currentShapeType)
+                  : LucideIcons.shapes,
               label: 'Shape',
               isActive: provider.currentTool == WhiteboardTool.shape,
               iconSize: iconSize,
@@ -1271,7 +1598,12 @@ class WhiteboardToolbar extends StatelessWidget {
               iconSize: iconSize,
               onTap: () => _showToolboxDialog(context, provider),
             ),
-            const VerticalDivider(color: Color(0xFFCBD5E1), width: 8, indent: 4, endIndent: 4),
+            const VerticalDivider(
+              color: Color(0xFFCBD5E1),
+              width: 8,
+              indent: 4,
+              endIndent: 4,
+            ),
 
             // History Group
             _ToolButton(
@@ -1331,13 +1663,17 @@ class _ToolButton extends StatelessWidget {
           'PPT/PDF' => const Color(0xFFF59E0B),
           'Background' => const Color(0xFF10B981),
           'Tools' => const Color(0xFF38BDF8),
-          'Undo' => isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
-          'Redo' => isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+          'Undo' =>
+            isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+          'Redo' =>
+            isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
           _ => const Color(0xFF334155),
         };
 
     final iconColor = isActive ? const Color(0xFF38BDF8) : defaultIconColor;
-    final textColor = isActive ? Colors.white : (isEnabled ? const Color(0xFF1E293B) : const Color(0xFF94A3B8));
+    final textColor = isActive
+        ? Colors.white
+        : (isEnabled ? const Color(0xFF1E293B) : const Color(0xFF94A3B8));
 
     return GestureDetector(
       onTap: onTap,
@@ -1349,8 +1685,18 @@ class _ToolButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: isActive ? const Color(0xFF0F172A) : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          border: isActive ? Border.all(color: const Color(0xFF38BDF8), width: 1.2) : null,
-          boxShadow: isActive ? [BoxShadow(color: const Color(0xFF38BDF8).withValues(alpha: 0.5), blurRadius: 6, spreadRadius: 0.5)] : null,
+          border: isActive
+              ? Border.all(color: const Color(0xFF38BDF8), width: 1.2)
+              : null,
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+                    blurRadius: 6,
+                    spreadRadius: 0.5,
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1378,7 +1724,11 @@ class _ColorButton extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _ColorButton({required this.color, required this.isSelected, required this.onTap});
+  const _ColorButton({
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1392,12 +1742,25 @@ class _ColorButton extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(
-            color: isSelected ? Colors.blue : (isWhite ? Colors.grey[400]! : Colors.grey[300]!),
+            color: isSelected
+                ? Colors.blue
+                : (isWhite ? Colors.grey[400]! : Colors.grey[300]!),
             width: isSelected ? 2.5 : 1,
           ),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 3)],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 3,
+            ),
+          ],
         ),
-        child: isSelected ? Icon(Icons.check, color: isWhite ? Colors.black : Colors.white, size: 14) : null,
+        child: isSelected
+            ? Icon(
+                Icons.check,
+                color: isWhite ? Colors.black : Colors.white,
+                size: 14,
+              )
+            : null,
       ),
     );
   }
@@ -1410,7 +1773,13 @@ class _PenTypeOption extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _PenTypeOption({required this.label, required this.icon, required this.color, required this.isSelected, required this.onTap});
+  const _PenTypeOption({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1421,7 +1790,10 @@ class _PenTypeOption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
         decoration: BoxDecoration(
           color: isSelected ? color.withOpacity(0.15) : Colors.grey[100],
-          border: Border.all(color: isSelected ? color : Colors.grey[300]!, width: isSelected ? 2 : 1),
+          border: Border.all(
+            color: isSelected ? color : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -1451,7 +1823,13 @@ class _PenProfileTab extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _PenProfileTab({required this.title, required this.subtitle, required this.color, required this.isSelected, required this.onTap});
+  const _PenProfileTab({
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1463,7 +1841,13 @@ class _PenProfileTab extends StatelessWidget {
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: isSelected
-              ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 1))]
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
               : null,
         ),
         child: Row(
@@ -1473,7 +1857,9 @@ class _PenProfileTab extends StatelessWidget {
               width: 9,
               height: 9,
               decoration: BoxDecoration(
-                color: color.value == Colors.white.value ? const Color(0xFF64748B) : color,
+                color: color.value == Colors.white.value
+                    ? const Color(0xFF64748B)
+                    : color,
                 shape: BoxShape.circle,
                 border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
               ),
@@ -1484,13 +1870,19 @@ class _PenProfileTab extends StatelessWidget {
               style: TextStyle(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                 fontSize: 11,
-                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                color: isSelected
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF64748B),
               ),
             ),
             const SizedBox(width: 4),
             Text(
               subtitle,
-              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: isSelected ? Colors.blue : const Color(0xFF94A3B8)),
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.blue : const Color(0xFF94A3B8),
+              ),
             ),
           ],
         ),
@@ -1505,11 +1897,18 @@ class _ShapeTile extends StatelessWidget {
   final IconData icon;
   final WhiteboardProvider provider;
 
-  const _ShapeTile({required this.name, required this.type, required this.icon, required this.provider});
+  const _ShapeTile({
+    required this.name,
+    required this.type,
+    required this.icon,
+    required this.provider,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final isSelected = provider.currentTool == WhiteboardTool.shape && provider.currentShapeType == type;
+    final isSelected =
+        provider.currentTool == WhiteboardTool.shape &&
+        provider.currentShapeType == type;
     return InkWell(
       onTap: () {
         provider.setShapeType(type);
@@ -1520,13 +1919,19 @@ class _ShapeTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF38BDF8).withValues(alpha: 0.2) : Colors.transparent,
+          color: isSelected
+              ? const Color(0xFF38BDF8).withValues(alpha: 0.2)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: isSelected ? const Color(0xFF38BDF8) : Colors.white70, size: 16),
+            Icon(
+              icon,
+              color: isSelected ? const Color(0xFF38BDF8) : Colors.white70,
+              size: 16,
+            ),
             const SizedBox(height: 2),
             Text(
               name,
@@ -1551,7 +1956,11 @@ class _ToolboxOptionItem extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ToolboxOptionItem({required this.icon, required this.label, required this.onTap});
+  const _ToolboxOptionItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1567,7 +1976,11 @@ class _ToolboxOptionItem extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              style: const TextStyle(color: Color(0xFF1E293B), fontSize: 8, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Color(0xFF1E293B),
+                fontSize: 8,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),

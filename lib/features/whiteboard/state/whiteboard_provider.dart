@@ -10,6 +10,7 @@ import '../models/document_element.dart';
 import '../models/text_element.dart';
 import '../models/table_element.dart';
 import '../models/mind_map_element.dart';
+import '../models/chemical_element_element.dart';
 import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
 import '../widgets/whiteboard_canvas.dart';
@@ -155,14 +156,25 @@ class WhiteboardProvider extends ChangeNotifier {
   // Thin Pen Profile Settings
   Color _thinColor = Colors.black;
   PenType _thinPenType = PenType.pen;
-  final Map<PenType, double> _thinPenStrokeWidths = {PenType.pen: 2.0, PenType.fountainPen: 2.0, PenType.brush: 2.0, PenType.marker: 2.0};
+  final Map<PenType, double> _thinPenStrokeWidths = {
+    PenType.pen: 2.0,
+    PenType.fountainPen: 2.5,
+    PenType.brush: 3.0,
+    PenType.marker: 6.0,
+  };
 
-  // Thick Pen Profile Settings
+  // Thick Pen Profile Settings (default 3px)
   Color _thickColor = Colors.blue;
   PenType _thickPenType = PenType.pen;
-  final Map<PenType, double> _thickPenStrokeWidths = {PenType.pen: 3.0, PenType.fountainPen: 3.0, PenType.brush: 3.0, PenType.marker: 3.0};
+  final Map<PenType, double> _thickPenStrokeWidths = {
+    PenType.pen: 3.0,
+    PenType.fountainPen: 4.0,
+    PenType.brush: 5.0,
+    PenType.marker: 8.0,
+  };
 
-  double _nibRadiusThreshold = 1.5;
+  bool _isAutoNibDetectionEnabled = true;
+  double _nibRadiusThreshold = 1.3;
   double _lastDetectedRadius = 0.0;
 
   double _eraserSize = 60.0;
@@ -187,14 +199,14 @@ class WhiteboardProvider extends ChangeNotifier {
   PenType get thinPenType => _thinPenType;
   PenType get thickPenType => _thickPenType;
   double get thinStrokeWidth => _thinPenStrokeWidths[_thinPenType] ?? 2.0;
-  double get thickStrokeWidth => _thickPenStrokeWidths[_thickPenType] ?? 6.0;
+  double get thickStrokeWidth => _thickPenStrokeWidths[_thickPenType] ?? 3.0;
 
   Color get currentColor => _activePenProfile == PenProfile.thin ? _thinColor : _thickColor;
   PenType get currentPenType => _activePenProfile == PenProfile.thin ? _thinPenType : _thickPenType;
 
   double get strokeWidth {
     final map = _activePenProfile == PenProfile.thin ? _thinPenStrokeWidths : _thickPenStrokeWidths;
-    return map[currentPenType] ?? (_activePenProfile == PenProfile.thin ? 2.0 : 6.0);
+    return map[currentPenType] ?? (_activePenProfile == PenProfile.thin ? 2.0 : 3.0);
   }
 
   double get eraserSize => _eraserSize;
@@ -224,6 +236,7 @@ class WhiteboardProvider extends ChangeNotifier {
     }
   }
 
+  bool get isAutoNibDetectionEnabled => _isAutoNibDetectionEnabled;
   double get nibRadiusThreshold => _nibRadiusThreshold;
   double get lastDetectedRadius => _lastDetectedRadius;
 
@@ -364,24 +377,47 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify();
   }
 
-  void autoDetectNibProfile(double radius, {bool isInvertedStylus = false}) {
-    if (_currentTool != WhiteboardTool.pen) return;
+  void setAutoNibDetectionEnabled(bool enabled) {
+    _isAutoNibDetectionEnabled = enabled;
+    _notify();
+  }
+
+  /// Real-time nib switch used by the canvas detector.
+  /// Only notifies listeners (toolbar) — does NOT invalidate the board cache,
+  /// so switching mid-stroke stays smooth.
+  bool applyDetectedNib(PenProfile target, double radius) {
+    if (!_isAutoNibDetectionEnabled || _currentTool != WhiteboardTool.pen) return false;
+    if (radius > 0) _lastDetectedRadius = radius;
+    if (_activePenProfile == target) return false;
+    _activePenProfile = target;
+    notifyListeners();
+    return true;
+  }
+
+  bool autoDetectNibProfile(double radius, {bool isInvertedStylus = false}) {
+    if (!_isAutoNibDetectionEnabled) return false;
+    if (_currentTool != WhiteboardTool.pen) return false;
 
     PenProfile targetProfile;
     if (isInvertedStylus) {
       targetProfile = PenProfile.thick;
     } else {
-      if (radius > 6.0) return;
-      if (radius > 0) {
-        _lastDetectedRadius = radius;
-      }
+      // radius 0 = panel gave no reading (first frame) -> don't force thin, keep current
+      if (radius <= 0) return false;
+      // > 6.0 = finger / palm sized contact, not a nib
+      if (radius > 6.0) return false;
+
+      _lastDetectedRadius = radius;
+      // Original rule: > 1.5 = thick nib, otherwise thin nib
       targetProfile = radius > _nibRadiusThreshold ? PenProfile.thick : PenProfile.thin;
     }
 
     if (_activePenProfile != targetProfile) {
       _activePenProfile = targetProfile;
       _notify();
+      return true;
     }
+    return false;
   }
 
   void setTool(WhiteboardTool tool) {
@@ -442,29 +478,85 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify();
   }
 
-  void updateLassoPath(Path? path) {
+  void setLassoPath(Path? path) {
     _lassoPath = path;
-    if (path != null) {
-      // Find all elements whose center or any point is inside the lasso
+    _notify();
+  }
+
+  void updateLassoPath(Path? path) {
+    setLassoPath(path);
+  }
+
+  void completeLassoSelection(Path closedPath) {
+    _lassoPath = null;
+    final bounds = closedPath.getBounds();
+    // Ignore accidental tiny taps (< 10x10 px)
+    if (bounds.width < 10 || bounds.height < 10) {
       _selectedElementIds.clear();
-      for (var element in currentPage.elements) {
-        if (!_isInCurrentView(element)) continue;
-        final bounds = element.getRawBounds();
-        // Professional check: if the center of the element is within the lasso path
-        if (path.contains(bounds.center)) {
-          _selectedElementIds.add(element.id);
-        } else if (element is StrokeElement) {
-          // For strokes, check if any point is inside for a better feel
-          for (var p in element.points) {
-            if (path.contains(p)) {
-              _selectedElementIds.add(element.id);
-              break;
-            }
-          }
-        }
+      _notify();
+      return;
+    }
+
+    _selectedElementIds.clear();
+    for (var element in currentPage.elements) {
+      if (!_isInCurrentView(element)) continue;
+      if (_isElementFullyEnclosed(element, closedPath)) {
+        _selectedElementIds.add(element.id);
       }
     }
     _notify();
+  }
+
+  bool _isElementFullyEnclosed(BoardElement element, Path lassoPath) {
+    final hasTransform = element.rotation != 0 || element.scale != 1.0;
+    final rawBounds = element.getRawBounds();
+    final center = rawBounds.center;
+
+    // Fast check: If the element's bounding box doesn't even intersect lasso bounds, skip
+    final lassoBounds = lassoPath.getBounds();
+    if (!hasTransform && !lassoBounds.overlaps(rawBounds)) {
+      return false;
+    }
+
+    Offset transform(Offset p) {
+      if (!hasTransform) return p;
+      final d = p - center;
+      final cosA = cos(element.rotation);
+      final sinA = sin(element.rotation);
+      return center + Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) * element.scale;
+    }
+
+    if (element is StrokeElement) {
+      if (element.points.isEmpty) return false;
+      // Strict Lasso: EVERY single point of the stroke must be strictly inside the lasso path
+      for (final p in element.points) {
+        if (!lassoPath.contains(transform(p))) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (element is ShapeElement) {
+      if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
+        return lassoPath.contains(transform(element.position)) &&
+               lassoPath.contains(transform(element.endPoint));
+      }
+      final rect = Rect.fromPoints(element.position, element.endPoint);
+      return lassoPath.contains(transform(rect.topLeft)) &&
+             lassoPath.contains(transform(rect.topRight)) &&
+             lassoPath.contains(transform(rect.bottomLeft)) &&
+             lassoPath.contains(transform(rect.bottomRight)) &&
+             lassoPath.contains(transform(rect.center));
+    }
+
+    // For TextElement, ImageElement, TableElement, MindMapElement, DocumentElement
+    if (rawBounds.isEmpty) return false;
+    return lassoPath.contains(transform(rawBounds.topLeft)) &&
+           lassoPath.contains(transform(rawBounds.topRight)) &&
+           lassoPath.contains(transform(rawBounds.bottomLeft)) &&
+           lassoPath.contains(transform(rawBounds.bottomRight)) &&
+           lassoPath.contains(transform(rawBounds.center));
   }
 
   // Commands
@@ -496,6 +588,8 @@ class WhiteboardProvider extends ChangeNotifier {
         } else if (el is TextElement) {
           currentPage.elements[i] = el.copyWith(color: color);
         } else if (el is TableElement) {
+          currentPage.elements[i] = el.copyWith(color: color);
+        } else if (el is ChemicalElementElement) {
           currentPage.elements[i] = el.copyWith(color: color);
         } else if (el is MindMapElement) {
           updateMindMapNodeColor(el.id, el.selectedNodeId, color);
@@ -777,6 +871,8 @@ class WhiteboardProvider extends ChangeNotifier {
         element.fontSize = (element.fontSize * scaleFactor).clamp(8.0, 200.0);
       } else if (element is TableElement) {
         element.size = Size(max(40.0, element.size.width * scaleFactor), max(30.0, element.size.height * scaleFactor));
+      } else if (element is ChemicalElementElement) {
+        element.size = Size(max(60.0, element.size.width * scaleFactor), max(70.0, element.size.height * scaleFactor));
       } else if (element is ShapeElement) {
         final center = element.getRawBounds().center;
         element.position = center + (element.position - center) * scaleFactor;
@@ -853,6 +949,8 @@ class WhiteboardProvider extends ChangeNotifier {
         element.fontSize = (element.fontSize * scaleFactor).clamp(8.0, 200.0);
       } else if (element is TableElement && scaleDelta != 0.0) {
         element.size = Size(max(40.0, element.size.width * scaleFactor), max(30.0, element.size.height * scaleFactor));
+      } else if (element is ChemicalElementElement && scaleDelta != 0.0) {
+        element.size = Size(max(60.0, element.size.width * scaleFactor), max(70.0, element.size.height * scaleFactor));
       }
 
       element.invalidateBounds();
@@ -1185,7 +1283,8 @@ class WhiteboardProvider extends ChangeNotifier {
       } else if (element is ImageElement ||
           element is DocumentElement ||
           element is TableElement ||
-          element is TextElement) {
+          element is TextElement ||
+          element is ChemicalElementElement) {
         final local = _toElementLocal(element, localPosition) - element.position;
         final raw = element.getRawBounds();
         if ((Offset.zero & raw.size).inflate(6).contains(local)) return element;

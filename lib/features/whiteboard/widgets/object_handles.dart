@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/document_element.dart';
 import '../models/image_element.dart';
 import '../models/mind_map_element.dart';
+import '../models/chemical_element_element.dart';
 import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
 import '../services/smart_writing_service.dart';
@@ -29,6 +30,7 @@ class _ObjectHandlesState extends State<ObjectHandles> {
     final selectedIds = provider.selectedElementIds;
     for (final el in provider.currentPage.elements) {
       if (selectedIds.contains(el.id)) {
+        if (el is ChemicalElementElement) return true;
         if (el is ImageElement && (el.imageUrl.contains('periodic_table') || el.imageUrl.contains('periodic-table'))) {
           return true;
         }
