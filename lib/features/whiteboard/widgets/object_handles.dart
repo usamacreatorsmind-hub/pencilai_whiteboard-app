@@ -6,6 +6,7 @@ import '../models/document_element.dart';
 import '../models/image_element.dart';
 import '../models/mind_map_element.dart';
 import '../models/chemical_element_element.dart';
+import '../models/text_element.dart';
 import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
 import '../services/smart_writing_service.dart';
@@ -24,14 +25,18 @@ class _ObjectHandlesState extends State<ObjectHandles> {
   double _lastRotation = 0.0;
   bool _showColorPalette = false;
 
-  static const Color handleAccent = Color(0xFF00C8AC); // Vibrant Cyan / Teal matching Reference UI
+  static const Color handleAccent = Color(
+    0xFF00C8AC,
+  ); // Vibrant Cyan / Teal matching Reference UI
 
   bool _isPeriodicTableSelected(WhiteboardProvider provider) {
     final selectedIds = provider.selectedElementIds;
     for (final el in provider.currentPage.elements) {
       if (selectedIds.contains(el.id)) {
         if (el is ChemicalElementElement) return true;
-        if (el is ImageElement && (el.imageUrl.contains('periodic_table') || el.imageUrl.contains('periodic-table'))) {
+        if (el is ImageElement &&
+            (el.imageUrl.contains('periodic_table') ||
+                el.imageUrl.contains('periodic-table'))) {
           return true;
         }
       }
@@ -50,13 +55,21 @@ class _ObjectHandlesState extends State<ObjectHandles> {
   }
 
   Widget _buildDivider() {
-    return Container(height: 18, width: 1, color: Colors.white.withValues(alpha: 0.2), margin: const EdgeInsets.symmetric(horizontal: 2));
+    return Container(
+      height: 18,
+      width: 1,
+      color: Colors.white.withValues(alpha: 0.2),
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+    );
   }
 
   bool _isSearching = false;
   bool _isConvertingSmartWriting = false;
 
-  Future<void> _triggerSmartWriting(BuildContext context, WhiteboardProvider provider) async {
+  Future<void> _triggerSmartWriting(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) async {
     if (_isConvertingSmartWriting) return;
     setState(() => _isConvertingSmartWriting = true);
 
@@ -71,27 +84,40 @@ class _ObjectHandlesState extends State<ObjectHandles> {
     }
   }
 
-  Future<void> _directSearchInChrome(BuildContext context, WhiteboardProvider provider) async {
+  Future<void> _directSearchInChrome(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) async {
     if (_isSearching) return;
     setState(() => _isSearching = true);
 
     try {
       String query = '';
       final selectedIds = provider.selectedElementIds;
-      final selectedElements = provider.currentPage.elements.where((e) => selectedIds.contains(e.id)).toList();
+      final selectedElements = provider.currentPage.elements
+          .where((e) => selectedIds.contains(e.id))
+          .toList();
       for (var el in selectedElements) {
         if (el is DocumentElement) {
           query = el.fileName.split('.').first;
+          break;
+        } else if (el is TextElement) {
+          query = el.text;
           break;
         }
       }
 
       if (query.isEmpty && selectedElements.isNotEmpty) {
-        final imagePath = await BoardStorageService().captureSelectedElementsImage(selectedElements);
-        if (imagePath != null) {
-          final recognized = await AiService().recognizeHandwriting(imagePath);
+        final imageBytes = await BoardStorageService()
+            .captureSelectedElementsBytes(selectedElements);
+        if (imageBytes != null) {
+          final recognized = await AiService().recognizeHandwriting(
+            imageBytes: imageBytes,
+          );
           if (!mounted) return;
-          if (recognized.isNotEmpty && !recognized.startsWith('Error') && !recognized.startsWith('⚠️')) {
+          if (recognized.isNotEmpty &&
+              !recognized.startsWith('Error') &&
+              !recognized.startsWith('⚠️')) {
             query = recognized;
           }
         }
@@ -146,13 +172,24 @@ class _ObjectHandlesState extends State<ObjectHandles> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFF8B5CF6).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10)),
-                  child: const Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    LucideIcons.sparkles,
+                    color: Color(0xFF8B5CF6),
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Text(
                   'AI Assist for Selected Text',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -169,7 +206,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
               color: const Color(0xFF10B981),
               onTap: () {
                 Navigator.pop(bottomContext);
-                provider.generateAiContent(type: 'Quick Quiz', isWholeDoc: false, forSelectedOnly: true);
+                provider.generateAiContent(
+                  type: 'Quick Quiz',
+                  isWholeDoc: false,
+                  forSelectedOnly: true,
+                );
               },
             ),
             const SizedBox(height: 10),
@@ -180,7 +221,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
               color: const Color(0xFF38BDF8),
               onTap: () {
                 Navigator.pop(bottomContext);
-                provider.generateAiContent(type: 'Homework', isWholeDoc: false, forSelectedOnly: true);
+                provider.generateAiContent(
+                  type: 'Homework',
+                  isWholeDoc: false,
+                  forSelectedOnly: true,
+                );
               },
             ),
             const SizedBox(height: 10),
@@ -191,7 +236,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
               color: const Color(0xFFF59E0B),
               onTap: () {
                 Navigator.pop(bottomContext);
-                provider.generateAiContent(type: 'Summary', isWholeDoc: false, forSelectedOnly: true);
+                provider.generateAiContent(
+                  type: 'Summary',
+                  isWholeDoc: false,
+                  forSelectedOnly: true,
+                );
               },
             ),
             const SizedBox(height: 12),
@@ -207,19 +256,29 @@ class _ObjectHandlesState extends State<ObjectHandles> {
     final selectedIds = provider.selectedElementIds;
     if (selectedIds.isEmpty) return const SizedBox.shrink();
 
-    final selectedElements = provider.currentPage.elements.where((e) => selectedIds.contains(e.id)).toList();
+    final selectedElements = provider.currentPage.elements
+        .where((e) => selectedIds.contains(e.id))
+        .toList();
     if (selectedElements.isEmpty) return const SizedBox.shrink();
 
     // 1. Calculate Group Bounding Box
     Rect groupRect = selectedElements[0].getRawBounds();
     if (selectedElements.length == 1) {
       final e = selectedElements[0];
-      groupRect = Rect.fromCenter(center: groupRect.center, width: groupRect.width * e.scale, height: groupRect.height * e.scale);
+      groupRect = Rect.fromCenter(
+        center: groupRect.center,
+        width: groupRect.width * e.scale,
+        height: groupRect.height * e.scale,
+      );
     } else {
       for (var i = 1; i < selectedElements.length; i++) {
         final e = selectedElements[i];
         final r = e.getRawBounds();
-        final visualR = Rect.fromCenter(center: r.center, width: r.width * e.scale, height: r.height * e.scale);
+        final visualR = Rect.fromCenter(
+          center: r.center,
+          width: r.width * e.scale,
+          height: r.height * e.scale,
+        );
         groupRect = groupRect.expandToInclude(visualR);
       }
     }
@@ -246,7 +305,12 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           top: boxTop,
           width: boxWidth,
           height: boxHeight,
-          child: CustomPaint(painter: _DashedBorderPainter(color: handleAccent, strokeWidth: 1.8)),
+          child: CustomPaint(
+            painter: _DashedBorderPainter(
+              color: handleAccent,
+              strokeWidth: 1.8,
+            ),
+          ),
         ),
 
         // 2. Center Drag & Pinch Scale Gesture Area
@@ -291,7 +355,9 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           top: boxTop - stemHeight,
           width: 2,
           height: stemHeight,
-          child: CustomPaint(painter: _RotationStemPainter(color: handleAccent)),
+          child: CustomPaint(
+            painter: _RotationStemPainter(color: handleAccent),
+          ),
         ),
 
         // 4. Top Rotation Handle Node (●)
@@ -315,15 +381,28 @@ class _ObjectHandlesState extends State<ObjectHandles> {
 
         // Bottom Action Tile (Search, Color Picker, Delete, AI Assist)
         Positioned(
-          left: boxCenterX - (_showColorPalette ? 160 : (_isPeriodicTableSelected(provider) ? 45 : 90)),
+          left:
+              boxCenterX -
+              (_showColorPalette
+                  ? 160
+                  : (_isPeriodicTableSelected(provider) ? 45 : 90)),
           top: boxBottom + 12,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.2),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.15),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: _showColorPalette
                 ? Container(
@@ -346,7 +425,9 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                             const Color(0xFFF97316), // Orange
                           ])
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 3,
+                              ),
                               child: GestureDetector(
                                 onTap: () {
                                   provider.updateSelectedElementsColor(color);
@@ -358,19 +439,39 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                                   decoration: BoxDecoration(
                                     color: color,
                                     shape: BoxShape.circle,
-                                    border: Border.all(color: color == Colors.white ? Colors.black26 : Colors.white, width: 2),
-                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4)],
+                                    border: Border.all(
+                                      color: color == Colors.white
+                                          ? Colors.black26
+                                          : Colors.white,
+                                      width: 2,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        blurRadius: 4,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
                           const SizedBox(width: 4),
                           GestureDetector(
-                            onTap: () => setState(() => _showColorPalette = false),
+                            onTap: () =>
+                                setState(() => _showColorPalette = false),
                             child: Container(
                               padding: const EdgeInsets.all(4.0),
-                              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), shape: BoxShape.circle),
-                              child: const Icon(LucideIcons.x, color: Colors.white70, size: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                LucideIcons.x,
+                                color: Colors.white70,
+                                size: 16,
+                              ),
                             ),
                           ),
                         ],
@@ -389,7 +490,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                            child: Icon(
+                              LucideIcons.trash2,
+                              color: Colors.redAccent,
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -407,7 +512,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                            child: Icon(
+                              LucideIcons.trash2,
+                              color: Colors.redAccent,
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -420,7 +529,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 20),
+                            child: Icon(
+                              LucideIcons.sparkles,
+                              color: Color(0xFF8B5CF6),
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -433,7 +546,9 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: _isConvertingSmartWriting ? null : () => _triggerSmartWriting(context, provider),
+                          onTap: _isConvertingSmartWriting
+                              ? null
+                              : () => _triggerSmartWriting(context, provider),
                           borderRadius: BorderRadius.circular(14),
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
@@ -441,9 +556,16 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF10B981)),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF10B981),
+                                    ),
                                   )
-                                : const Icon(LucideIcons.wand2, color: Color(0xFF10B981), size: 20),
+                                : const Icon(
+                                    LucideIcons.wand2,
+                                    color: Color(0xFF10B981),
+                                    size: 20,
+                                  ),
                           ),
                         ),
                       ),
@@ -452,7 +574,9 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: _isSearching ? null : () => _directSearchInChrome(context, provider),
+                          onTap: _isSearching
+                              ? null
+                              : () => _directSearchInChrome(context, provider),
                           borderRadius: BorderRadius.circular(14),
                           child: Padding(
                             padding: const EdgeInsets.all(8.0),
@@ -460,9 +584,16 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                                 ? const SizedBox(
                                     width: 20,
                                     height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF38BDF8),
+                                    ),
                                   )
-                                : const Icon(LucideIcons.search, color: Color(0xFF38BDF8), size: 20),
+                                : const Icon(
+                                    LucideIcons.search,
+                                    color: Color(0xFF38BDF8),
+                                    size: 20,
+                                  ),
                           ),
                         ),
                       ),
@@ -471,11 +602,16 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => TranslationDialog.show(context, provider),
+                          onTap: () =>
+                              TranslationDialog.show(context, provider),
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.languages, color: Color(0xFF2DD4BF), size: 20),
+                            child: Icon(
+                              LucideIcons.languages,
+                              color: Color(0xFF2DD4BF),
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -488,7 +624,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.palette, color: Color(0xFFF59E0B), size: 20),
+                            child: Icon(
+                              LucideIcons.palette,
+                              color: Color(0xFFF59E0B),
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -501,7 +641,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.trash2, color: Colors.redAccent, size: 20),
+                            child: Icon(
+                              LucideIcons.trash2,
+                              color: Colors.redAccent,
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -514,7 +658,11 @@ class _ObjectHandlesState extends State<ObjectHandles> {
                           borderRadius: BorderRadius.circular(14),
                           child: const Padding(
                             padding: EdgeInsets.all(8.0),
-                            child: Icon(LucideIcons.sparkles, color: Color(0xFF8B5CF6), size: 20),
+                            child: Icon(
+                              LucideIcons.sparkles,
+                              color: Color(0xFF8B5CF6),
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -532,7 +680,10 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           child: _CornerNodeHandle(
             color: handleAccent,
             size: cornerHandleSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.topLeft, d.delta),
+            onPanUpdate: (d) => provider.resizeSelectedElement(
+              HandleDirection.topLeft,
+              d.delta,
+            ),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
@@ -545,7 +696,10 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           child: _CornerNodeHandle(
             color: handleAccent,
             size: cornerHandleSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.topRight, d.delta),
+            onPanUpdate: (d) => provider.resizeSelectedElement(
+              HandleDirection.topRight,
+              d.delta,
+            ),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
@@ -558,7 +712,10 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           child: _CornerNodeHandle(
             color: handleAccent,
             size: cornerHandleSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.bottomRight, d.delta),
+            onPanUpdate: (d) => provider.resizeSelectedElement(
+              HandleDirection.bottomRight,
+              d.delta,
+            ),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
@@ -571,7 +728,10 @@ class _ObjectHandlesState extends State<ObjectHandles> {
           child: _CornerNodeHandle(
             color: handleAccent,
             size: cornerHandleSize,
-            onPanUpdate: (d) => provider.resizeSelectedElement(HandleDirection.bottomLeft, d.delta),
+            onPanUpdate: (d) => provider.resizeSelectedElement(
+              HandleDirection.bottomLeft,
+              d.delta,
+            ),
             onPanStart: (_) => provider.startTransform(),
             onPanEnd: (_) => provider.endTransform(),
           ),
@@ -588,7 +748,13 @@ class _CornerNodeHandle extends StatelessWidget {
   final Function(DragStartDetails)? onPanStart;
   final Function(DragEndDetails)? onPanEnd;
 
-  const _CornerNodeHandle({required this.color, required this.size, this.onPanUpdate, this.onPanStart, this.onPanEnd});
+  const _CornerNodeHandle({
+    required this.color,
+    required this.size,
+    this.onPanUpdate,
+    this.onPanStart,
+    this.onPanEnd,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -603,7 +769,13 @@ class _CornerNodeHandle extends StatelessWidget {
           color: color,
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 2.2),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
       ),
     );
@@ -617,7 +789,13 @@ class _AiOptionTile extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  const _AiOptionTile({required this.title, required this.subtitle, required this.icon, required this.color, required this.onTap});
+  const _AiOptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -635,7 +813,10 @@ class _AiOptionTile extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: color.withValues(alpha: 0.15), shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
               child: Icon(icon, color: color, size: 20),
             ),
             const SizedBox(width: 14),
@@ -645,10 +826,17 @@ class _AiOptionTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -673,7 +861,13 @@ class _DashedBorderPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke;
 
-    final RRect rrect = RRect.fromLTRBR(0, 0, size.width, size.height, const Radius.circular(4));
+    final RRect rrect = RRect.fromLTRBR(
+      0,
+      0,
+      size.width,
+      size.height,
+      const Radius.circular(4),
+    );
     final Path path = Path()..addRRect(rrect);
 
     const double dashWidth = 6.0;
@@ -707,9 +901,14 @@ class _RotationStemPainter extends CustomPainter {
       ..strokeWidth = 1.8
       ..style = PaintingStyle.stroke;
 
-    canvas.drawLine(Offset(size.width / 2, size.height), Offset(size.width / 2, 0), paint);
+    canvas.drawLine(
+      Offset(size.width / 2, size.height),
+      Offset(size.width / 2, 0),
+      paint,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _RotationStemPainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(covariant _RotationStemPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

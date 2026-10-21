@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -37,7 +38,9 @@ class BoardStorageService {
     try {
       if (FirebaseAuth.instance.currentUser == null) {
         await FirebaseAuth.instance.signInAnonymously();
-        debugPrint('Signed in anonymously to Firebase for Board Storage access');
+        debugPrint(
+          'Signed in anonymously to Firebase for Board Storage access',
+        );
       }
     } catch (e) {
       debugPrint('Firebase anonymous auth note: $e');
@@ -117,10 +120,11 @@ class BoardStorageService {
     }
   }
 
-  /// Captures ONLY the selected elements as a cropped image for precise AI Vision OCR
-  Future<String?> captureSelectedElementsImage(
-    List<BoardElement> selectedElements,
-  ) async {
+  /// Captures ONLY the selected elements and returns downscaled PNG bytes directly in memory
+  Future<Uint8List?> captureSelectedElementsBytes(
+    List<BoardElement> selectedElements, {
+    double maxDimension = 600.0,
+  }) async {
     try {
       if (selectedElements.isEmpty) return null;
 
@@ -132,7 +136,7 @@ class BoardStorageService {
 
       if (bounds.width <= 0 || bounds.height <= 0) return null;
 
-      const double padding = 20.0;
+      const double padding = 16.0;
       final cropRect = Rect.fromLTRB(
         bounds.left - padding,
         bounds.top - padding,
@@ -140,19 +144,30 @@ class BoardStorageService {
         bounds.bottom + padding,
       );
 
-      final double imageWidth = cropRect.width;
-      final double imageHeight = cropRect.height;
+      final double originalW = cropRect.width;
+      final double originalH = cropRect.height;
+      if (originalW <= 0 || originalH <= 0) return null;
+
+      // Scale down large strokes so OCR doesn't transfer megabytes of unnecessary pixels
+      final double longestSide = max(originalW, originalH);
+      final double scale = longestSide > maxDimension
+          ? maxDimension / longestSide
+          : 1.0;
+
+      final int targetW = (originalW * scale).round().clamp(20, 1024);
+      final int targetH = (originalH * scale).round().clamp(20, 1024);
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
 
-      // 1. Draw white background covering the image bounds (0, 0, imageWidth, imageHeight)
+      // 1. Draw crisp white background
       canvas.drawRect(
-        Rect.fromLTWH(0, 0, imageWidth, imageHeight),
+        Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
         Paint()..color = Colors.white,
       );
 
-      // 2. Translate canvas so cropRect.left, cropRect.top maps to (0, 0)
+      // 2. Scale and translate canvas
+      canvas.scale(scale, scale);
       canvas.translate(-cropRect.left, -cropRect.top);
 
       // 3. Render ONLY selected elements
@@ -161,18 +176,30 @@ class BoardStorageService {
       }
 
       final picture = recorder.endRecording();
-      final image = await picture.toImage(
-        cropRect.width.toInt().clamp(20, 2000),
-        cropRect.height.toInt().clamp(20, 2000),
-      );
+      final image = await picture.toImage(targetW, targetH);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) return null;
+
+      return byteData.buffer.asUint8List();
+    } catch (e) {
+      debugPrint('Error capturing selected elements bytes: $e');
+      return null;
+    }
+  }
+
+  /// Captures ONLY the selected elements as a cropped image for precise AI Vision OCR
+  Future<String?> captureSelectedElementsImage(
+    List<BoardElement> selectedElements,
+  ) async {
+    try {
+      final bytes = await captureSelectedElementsBytes(selectedElements);
+      if (bytes == null) return null;
 
       final tempDir = await getTemporaryDirectory();
       final path =
           '${tempDir.path}/selected_crop_${DateTime.now().millisecondsSinceEpoch}.png';
       final file = File(path);
-      await file.writeAsBytes(byteData.buffer.asUint8List());
+      await file.writeAsBytes(bytes);
       return path;
     } catch (e) {
       debugPrint('Error capturing selected elements image: $e');
@@ -346,7 +373,9 @@ class BoardStorageService {
                 pageFormat: PdfPageFormat.a4.landscape,
                 margin: pw.EdgeInsets.zero,
                 build: (pw.Context context) {
-                  return pw.Center(child: pw.Image(imagePdf, fit: pw.BoxFit.contain));
+                  return pw.Center(
+                    child: pw.Image(imagePdf, fit: pw.BoxFit.contain),
+                  );
                 },
               ),
             );
@@ -374,8 +403,7 @@ class BoardStorageService {
   ]) async {
     await _ensureAuth();
     try {
-      final fileName =
-          'session_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final fileName = 'session_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final folder = (teacherIdOrFolder != null && teacherIdOrFolder.isNotEmpty)
           ? 'whiteboard_notes/$teacherIdOrFolder'
           : 'whiteboard_notes';

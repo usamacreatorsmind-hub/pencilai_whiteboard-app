@@ -34,7 +34,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final Map<int, _NibTrack> _nibTracks = {};
   static const int _kNibDecideMs = 150; // initial voting window
   static const int _kNibThickStreak =
-  3; // consecutive thick readings to upgrade later
+      3; // consecutive thick readings to upgrade later
 
   // displayElements memoization
   Iterable<BoardElement>? _displaySource;
@@ -97,17 +97,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final sinA = sin(-el.rotation);
       final r =
           Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) /
-              el.scale;
+          el.scale;
       q = c + r;
     }
     return q - el.position;
   }
 
   ({MindMapElement el, MindMapNode node})? _mindMapNodeAt(
-      Offset p,
-      WhiteboardProvider provider, {
-        double inflate = 0,
-      }) {
+    Offset p,
+    WhiteboardProvider provider, {
+    double inflate = 0,
+  }) {
     for (final el in _visibleMindMaps(provider)) {
       final n = el.nodeAt(_mmLocal(el, p), inflate: inflate);
       if (n != null) return (el: el, node: n);
@@ -161,9 +161,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (CanvasPointerManager.kDebugPointerInfo) {
       debugPrint(
         'DOWN: kind=${event.kind} dev=${event.device} id=${event.pointer} '
-            'rMajor=${event.radiusMajor.toStringAsFixed(1)} rMinor=${event.radiusMinor.toStringAsFixed(1)} '
-            'size=${event.size.toStringAsFixed(4)} press=${event.pressure.toStringAsFixed(2)} '
-            'active=${_pointerManager.pointers.length}',
+        'rMajor=${event.radiusMajor.toStringAsFixed(1)} rMinor=${event.radiusMinor.toStringAsFixed(1)} '
+        'size=${event.size.toStringAsFixed(4)} press=${event.pressure.toStringAsFixed(2)} '
+        'active=${_pointerManager.pointers.length}',
       );
     }
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
@@ -194,8 +194,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       if (!_pointerManager.isUsingGestureEraser) {
         _pointerManager.switchToEraserMode(provider, context, mounted);
       } else {
-        _pointerManager.queueGestureErase(
-          _pointerManager.gestureEraseCentroid(localPos, context),
+        final centroid =
+            _pointerManager.gestureEraseCentroid(localPos, context);
+        _pointerManager.handleGestureEraseMove(
+          centroid,
+          provider,
           context,
           mounted,
         );
@@ -239,8 +242,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final startHit = _mindMapNodeAt(localPos, provider, inflate: 6);
       if (startHit != null) {
         _pointerManager.mmStrokeTargets[pointerId] = (
-        mmId: startHit.el.id,
-        nodeId: startHit.node.id,
+          mmId: startHit.el.id,
+          nodeId: startHit.node.id,
         );
         if (startHit.el.selectedNodeId != startHit.node.id) {
           startHit.el.selectedNodeId = startHit.node.id;
@@ -355,9 +358,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   }
 
   void _processSinglePointerMove(
-      PointerMoveEvent event,
-      WhiteboardProvider provider,
-      ) {
+    PointerMoveEvent event,
+    WhiteboardProvider provider,
+  ) {
     _pointerManager.pruneStalePointers();
     final pointerId = event.pointer;
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
@@ -372,8 +375,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     if (CanvasPointerManager.kDebugPointerInfo &&
         DateTime.now()
-            .difference(_pointerManager.lastMoveLogTime)
-            .inMilliseconds >
+                .difference(_pointerManager.lastMoveLogTime)
+                .inMilliseconds >
             100) {
       debugPrint(
         'MOVE: pointers=${_pointerManager.pointers.length} fresh=${_pointerManager.freshTouchPointers().length} eraserMode=${_pointerManager.isUsingGestureEraser}',
@@ -386,8 +389,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _pointerManager.switchToEraserMode(provider, context, mounted);
         return;
       }
-      _pointerManager.queueGestureErase(
-        _pointerManager.gestureEraseCentroid(localPos, context),
+      final centroid =
+          _pointerManager.gestureEraseCentroid(localPos, context);
+      _pointerManager.handleGestureEraseMove(
+        centroid,
+        provider,
         context,
         mounted,
       );
@@ -483,10 +489,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final durationMs = downTime != null
         ? DateTime.now().difference(downTime).inMilliseconds
         : 999;
-    final bool isQuickPalm = durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
+    final bool isQuickPalm =
+        durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
         _pointerManager.isPalm(event);
     final bool dropElement =
-        (wasGestureEraser || isQuickPalm) && _pointerManager.isTouchKind(event);
+        wasGestureEraser ||
+        isQuickPalm ||
+        _pointerManager.isUsingGestureEraser ||
+        _pointerManager.isPalm(event);
     if (element != null && !dropElement) {
       if (element is StrokeElement && element.points.length > 1) {
         element.invalidatePath();
@@ -542,12 +552,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     final bool isPalmCancel =
         durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
-            (_pointerManager.isPalm(event) ||
-                (hint != null &&
-                    (hint['isCanceled'] == true || hint['toolType'] == 5)));
+        (_pointerManager.isPalm(event) ||
+            (hint != null &&
+                (hint['isCanceled'] == true || hint['toolType'] == 5)));
 
     _pointerManager.lastCancelInfo =
-    'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
+        'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
     if (CanvasPointerManager.kDebugPointerInfo) {
       debugPrint(
         'CANCEL: ${_pointerManager.lastCancelInfo} totalCount=${_pointerManager.cancelEventCount}',
@@ -585,11 +595,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   // -------------------------------------------------------------------------
 
   List<BoardElement> _displayElementsFor(
-      Iterable<BoardElement> elements,
-      int version,
-      bool overlay,
-      int page,
-      ) {
+    Iterable<BoardElement> elements,
+    int version,
+    bool overlay,
+    int page,
+  ) {
     final len = elements.length;
     if (identical(_displaySource, elements) &&
         _displayCacheVersion == version &&
@@ -623,20 +633,24 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         height: diameter,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFFFFFFF), Color(0xFFF1F5F9)],
-          ),
+          color: Colors.white,
           border: Border.all(
-            color: const Color(0xFF94A3B8),
+            color: const Color(0xFF2563EB),
             width: borderWidth,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 12,
+              spreadRadius: 2,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Center(
           child: Icon(
             LucideIcons.eraser,
-            color: const Color(0xFF64748B),
+            color: const Color(0xFF2563EB),
             size: (diameter * iconFactor).clamp(minIcon, maxIcon),
           ),
         ),
@@ -647,17 +661,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   @override
   Widget build(BuildContext context) {
     return Selector<
-        WhiteboardProvider,
-        (int, Set<String>, Path?, WhiteboardTool, bool, int, Offset)
+      WhiteboardProvider,
+      (int, Set<String>, Path?, WhiteboardTool, bool, int, Offset)
     >(
       selector: (context, provider) => (
-      provider.boardVersion,
-      provider.selectedElementIds,
-      provider.lassoPath,
-      provider.currentTool,
-      provider.isDocumentOverlayOpen,
-      provider.overlayCurrentPage,
-      provider.canvasPanOffset,
+        provider.boardVersion,
+        provider.selectedElementIds,
+        provider.lassoPath,
+        provider.currentTool,
+        provider.isDocumentOverlayOpen,
+        provider.overlayCurrentPage,
+        provider.canvasPanOffset,
       ),
       builder: (context, data, _) {
         final provider = context.read<WhiteboardProvider>();
@@ -707,8 +721,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                         clipBehavior: Clip.none,
                         children: [
                           ...displayElements.whereType<ImageElement>().map((
-                              img,
-                              ) {
+                            img,
+                          ) {
                             final rawRect = img.getRawBounds();
                             final visualRect = Rect.fromCenter(
                               center: rawRect.center,
@@ -740,33 +754,33 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                                     borderRadius: BorderRadius.circular(6),
                                     child: img.imageUrl.startsWith('http')
                                         ? Image.network(
-                                      img.imageUrl,
-                                      fit: BoxFit.contain,
-                                      filterQuality: FilterQuality.high,
-                                      errorBuilder: (c, e, s) =>
-                                      const Icon(
-                                        Icons.broken_image,
-                                        size: 50,
-                                      ),
-                                    )
+                                            img.imageUrl,
+                                            fit: BoxFit.contain,
+                                            filterQuality: FilterQuality.high,
+                                            errorBuilder: (c, e, s) =>
+                                                const Icon(
+                                                  Icons.broken_image,
+                                                  size: 50,
+                                                ),
+                                          )
                                         : Image.file(
-                                      File(img.imageUrl),
-                                      fit: BoxFit.contain,
-                                      filterQuality: FilterQuality.high,
-                                      errorBuilder: (c, e, s) =>
-                                      const Icon(
-                                        Icons.broken_image,
-                                        size: 50,
-                                      ),
-                                    ),
+                                            File(img.imageUrl),
+                                            fit: BoxFit.contain,
+                                            filterQuality: FilterQuality.high,
+                                            errorBuilder: (c, e, s) =>
+                                                const Icon(
+                                                  Icons.broken_image,
+                                                  size: 50,
+                                                ),
+                                          ),
                                   ),
                                 ),
                               ),
                             );
                           }),
                           ...displayElements.whereType<DocumentElement>().map((
-                              doc,
-                              ) {
+                            doc,
+                          ) {
                             final rawRect = doc.getRawBounds();
                             final visualRect = Rect.fromCenter(
                               center: rawRect.center,
@@ -778,9 +792,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                             final lowerName = doc.fileName.toLowerCase();
                             final isPptx =
                                 lowerPath.endsWith('.pptx') ||
-                                    lowerName.endsWith('.pptx') ||
-                                    lowerPath.endsWith('.ppt') ||
-                                    lowerName.endsWith('.ppt');
+                                lowerName.endsWith('.pptx') ||
+                                lowerPath.endsWith('.ppt') ||
+                                lowerName.endsWith('.ppt');
 
                             Widget content;
                             if (isPptx) {
@@ -897,8 +911,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                         return Stack(
                           clipBehavior: Clip.none,
                           children: _pointerManager.eraserPositions.values.map((
-                              pos,
-                              ) {
+                            pos,
+                          ) {
                             return Positioned(
                               left: pos.dx + panOffset.dx - radius,
                               top: pos.dy + panOffset.dy - radius,
@@ -937,8 +951,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final freshPointers = _pointerManager.freshTouchPointers();
     final msSincePalm = _pointerManager.lastPalmSeen != null
         ? DateTime.now()
-        .difference(_pointerManager.lastPalmSeen!)
-        .inMilliseconds
+              .difference(_pointerManager.lastPalmSeen!)
+              .inMilliseconds
         : -1;
 
     return Positioned(
@@ -1015,18 +1029,19 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                 final nativeStr = hint != null
                     ? 'Native: tool=${hint['toolType']} cnl=${hint['isCanceled']}'
                     : 'Native: --';
-                final bool isB = max(p.radiusMajor, p.radiusMinor) >=
+                final bool isB =
+                    max(p.radiusMajor, p.radiusMinor) >=
                         CanvasPointerManager.kBackhandRadiusMin ||
                     p.size >= CanvasPointerManager.kBackhandSizeMin;
                 final String reason = isP
                     ? (max(p.radiusMajor, p.radiusMinor) >=
-                            CanvasPointerManager.kPalmRadiusMajorMin
-                        ? "Palm"
-                        : (isB ? "Backhand" : "Size"))
+                              CanvasPointerManager.kPalmRadiusMajorMin
+                          ? "Palm"
+                          : (isB ? "Backhand" : "Size"))
                     : (freshPointers.length >=
-                            CanvasPointerManager.kPalmClusterMinPoints
-                        ? "Cluster"
-                        : "Finger");
+                              CanvasPointerManager.kPalmClusterMinPoints
+                          ? "Cluster"
+                          : "Finger");
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Text(

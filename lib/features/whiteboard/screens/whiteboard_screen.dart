@@ -8,7 +8,6 @@ import 'package:file_picker/file_picker.dart';
 import '../widgets/whiteboard_canvas.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/object_handles.dart';
-import '../widgets/page_switcher.dart';
 import '../widgets/slide_overview_sidebar.dart';
 import '../widgets/ai_floating_menu_widget.dart';
 import '../widgets/ai_result_panel.dart';
@@ -26,6 +25,11 @@ import '../../auth/providers/auth_provider.dart';
 import '../../auth/widgets/profile_dialog.dart';
 import '../../auth/widgets/account_selection_dialog.dart';
 import '../widgets/qr_notes_dialog.dart';
+import '../widgets/settings_dialog.dart';
+import '../widgets/page_switcher.dart';
+import '../widgets/split_screen_dialog.dart';
+import '../widgets/split_screen_view.dart';
+import '../widgets/canvas/canvas_grid_painter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class WhiteboardScreen extends StatefulWidget {
@@ -44,6 +48,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
   bool _showSetSquare = false;
   bool _showCompass = false;
   bool _isConnected = true;
+  bool _isSplitScreenActive = false;
+  int _splitCount = 2;
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
 
   @override
@@ -53,7 +59,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     _checkInitialConnectivity();
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) {
       final connected = !results.contains(ConnectivityResult.none);
       if (mounted && _isConnected != connected) {
         setState(() => _isConnected = connected);
@@ -61,7 +69,8 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<WhiteboardProvider>(context, listen: false).canvasKey = _canvasKey;
+      Provider.of<WhiteboardProvider>(context, listen: false).canvasKey =
+          _canvasKey;
     });
   }
 
@@ -90,10 +99,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
 
   /// Global (screen) points -> canvas coords (pan hata ke)
   List<Offset> _toCanvasPoints(List<Offset> globalPoints) {
-    final renderBox = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox =
+        _canvasKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return const [];
     final provider = Provider.of<WhiteboardProvider>(context, listen: false);
-    return globalPoints.map((gp) => provider.screenToCanvas(renderBox.globalToLocal(gp))).toList();
+    return globalPoints
+        .map((gp) => provider.screenToCanvas(renderBox.globalToLocal(gp)))
+        .toList();
   }
 
   void _addStrokeFromGlobal(List<Offset> globalPoints) {
@@ -108,7 +120,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         color: provider.currentColor,
         strokeWidth: provider.strokeWidth,
         penType: provider.currentPenType,
-        docPage: provider.isDocumentOverlayOpen ? provider.overlayCurrentPage : null,
+        docPage: provider.isDocumentOverlayOpen
+            ? provider.overlayCurrentPage
+            : null,
       ),
     );
   }
@@ -120,8 +134,14 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Export Board', style: TextStyle(color: Colors.white)),
-        content: const Text('Choose a format to save your slide.', style: TextStyle(color: Colors.grey)),
+        title: const Text(
+          'Export Board',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'Choose a format to save your slide.',
+          style: TextStyle(color: Colors.grey),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -133,11 +153,21 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               try {
                 await _storageService.exportToImage(_canvasKey);
                 if (mounted) {
-                  scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('Image saved successfully!')));
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.green,
+                      content: Text('Image saved successfully!'),
+                    ),
+                  );
                 }
               } catch (e) {
                 if (mounted) {
-                  scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to save image: $e')));
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.red,
+                      content: Text('Failed to save image: $e'),
+                    ),
+                  );
                 }
               }
             },
@@ -152,11 +182,21 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               try {
                 final path = await _storageService.exportToPdf(_canvasKey);
                 if (path != null && mounted) {
-                  scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('PDF saved successfully!')));
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Colors.green,
+                      content: Text('PDF saved successfully!'),
+                    ),
+                  );
                 }
               } catch (e) {
                 if (mounted) {
-                  scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to save PDF: $e')));
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.red,
+                      content: Text('Failed to save PDF: $e'),
+                    ),
+                  );
                 }
               }
             },
@@ -171,8 +211,14 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
               _handleDirectWhatsAppShare();
             },
             icon: const Icon(LucideIcons.share2, size: 14),
-            label: const Text('Share Notes', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white),
+            label: const Text(
+              'Share Notes',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF25D366),
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
@@ -185,7 +231,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
         title: const Text('Exit App?', style: TextStyle(color: Colors.white)),
-        content: const Text('Are you sure you want to close the app?', style: TextStyle(color: Colors.grey)),
+        content: const Text(
+          'Are you sure you want to close the app?',
+          style: TextStyle(color: Colors.grey),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -216,7 +265,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFF1F5F9), // Light background
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 4))],
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -226,7 +281,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                         final bool isLoggedIn = auth.isLoggedIn;
                         return _buildMenuItem(
                           menuContext,
-                          isLoggedIn ? LucideIcons.userCheck : LucideIcons.logIn,
+                          isLoggedIn
+                              ? LucideIcons.userCheck
+                              : LucideIcons.logIn,
                           isLoggedIn ? auth.displayName : 'Login',
                           () {
                             Navigator.pop(menuContext);
@@ -236,26 +293,56 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       },
                     ),
                     const Divider(height: 1, color: Colors.black12),
-                    _buildMenuItem(menuContext, LucideIcons.filePlus, 'New', () {
-                      Navigator.pop(menuContext);
-                      _handleNewBoard();
-                    }),
-                    _buildMenuItem(menuContext, LucideIcons.folderOpen, 'Open', () {
-                      Navigator.pop(menuContext);
-                      _handleOpenFile();
-                    }),
+                    _buildMenuItem(
+                      menuContext,
+                      LucideIcons.filePlus,
+                      'New',
+                      () {
+                        Navigator.pop(menuContext);
+                        _handleNewBoard();
+                      },
+                    ),
+                    _buildMenuItem(
+                      menuContext,
+                      LucideIcons.folderOpen,
+                      'Open',
+                      () {
+                        Navigator.pop(menuContext);
+                        _handleOpenFile();
+                      },
+                    ),
                     _buildMenuItem(menuContext, LucideIcons.save, 'Save', () {
                       Navigator.pop(menuContext);
                       _handleSave();
                     }),
-                    _buildMenuItem(menuContext, LucideIcons.fileText, 'Save as', () {
-                      Navigator.pop(menuContext);
-                      _handleSaveAs();
-                    }),
-                    _buildMenuItem(menuContext, LucideIcons.scanLine, 'Scan', () {
-                      Navigator.pop(menuContext);
-                      _handleScan();
-                    }),
+                    _buildMenuItem(
+                      menuContext,
+                      LucideIcons.fileText,
+                      'Save as',
+                      () {
+                        Navigator.pop(menuContext);
+                        _handleSaveAs();
+                      },
+                    ),
+                    _buildMenuItem(
+                      menuContext,
+                      LucideIcons.scanLine,
+                      'Scan',
+                      () {
+                        Navigator.pop(menuContext);
+                        _handleScan();
+                      },
+                    ),
+                    const Divider(height: 1, color: Colors.black12),
+                    _buildMenuItem(
+                      menuContext,
+                      LucideIcons.settings,
+                      'Settings',
+                      () {
+                        Navigator.pop(menuContext);
+                        _showSettingsDialog(context);
+                      },
+                    ),
                     const Divider(height: 1, color: Colors.black12),
                     _buildMenuItem(menuContext, LucideIcons.logOut, 'Exit', () {
                       Navigator.pop(menuContext);
@@ -271,7 +358,30 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, IconData icon, String label, VoidCallback onTap, {bool isRed = false}) {
+  void _showSettingsDialog(BuildContext context) {
+    SettingsDialog.show(context);
+  }
+
+  void _showSplitScreenDialog(BuildContext context) {
+    SplitScreenDialog.show(
+      context,
+      anchorOffset: const Offset(24, 0),
+      onSelectSplit: (count) {
+        setState(() {
+          _isSplitScreenActive = true;
+          _splitCount = count;
+        });
+      },
+    );
+  }
+
+  Widget _buildMenuItem(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool isRed = false,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -279,12 +389,20 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: isRed ? Colors.red : const Color(0xFF334155)),
+            Icon(
+              icon,
+              size: 20,
+              color: isRed ? Colors.red : const Color(0xFF334155),
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(color: isRed ? Colors.red : const Color(0xFF1E293B), fontSize: 15, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: isRed ? Colors.red : const Color(0xFF1E293B),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -300,7 +418,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
         title: const Text('New Board', style: TextStyle(color: Colors.white)),
-        content: const Text('Do you want to save your current work before starting a new board?', style: TextStyle(color: Colors.grey)),
+        content: const Text(
+          'Do you want to save your current work before starting a new board?',
+          style: TextStyle(color: Colors.grey),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -316,10 +437,16 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              final provider = Provider.of<WhiteboardProvider>(context, listen: false);
+              final provider = Provider.of<WhiteboardProvider>(
+                context,
+                listen: false,
+              );
               provider.clearCurrentPage();
             },
-            child: const Text('Don\'t Save', style: TextStyle(color: Colors.red)),
+            child: const Text(
+              'Don\'t Save',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -330,11 +457,16 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final provider = Provider.of<WhiteboardProvider>(context, listen: false);
     try {
-      final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['jpg', 'png', 'jpeg', 'pdf', 'ppt', 'pptx']);
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'png', 'jpeg', 'pdf', 'ppt', 'pptx'],
+      );
       if (result != null && result.files.single.path != null) {
         final filePath = result.files.single.path!;
         final lower = filePath.toLowerCase();
-        if (lower.endsWith('jpg') || lower.endsWith('png') || lower.endsWith('jpeg')) {
+        if (lower.endsWith('jpg') ||
+            lower.endsWith('png') ||
+            lower.endsWith('jpeg')) {
           provider.addElement(
             ImageElement(
               id: const Uuid().v4(),
@@ -355,16 +487,28 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             ),
           );
         }
-        scaffoldMessenger.showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text('File opened successfully!')));
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            backgroundColor: Colors.green,
+            content: Text('File opened successfully!'),
+          ),
+        );
       }
     } catch (e) {
-      scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to open file: $e')));
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red,
+          content: Text('Failed to open file: $e'),
+        ),
+      );
     }
   }
 
   void _handleSaveAs() {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final controller = TextEditingController(text: 'Whiteboard_${DateTime.now().millisecondsSinceEpoch}');
+    final controller = TextEditingController(
+      text: 'Whiteboard_${DateTime.now().millisecondsSinceEpoch}',
+    );
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -376,8 +520,12 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           decoration: const InputDecoration(
             labelText: 'File Name',
             labelStyle: TextStyle(color: Colors.grey),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
-            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.grey),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.blue),
+            ),
           ),
         ),
         actions: [
@@ -393,10 +541,18 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 try {
                   await _storageService.exportToImage(_canvasKey);
                   scaffoldMessenger.showSnackBar(
-                    SnackBar(backgroundColor: Colors.green, content: Text('Saved as "$fileName" successfully!')),
+                    SnackBar(
+                      backgroundColor: Colors.green,
+                      content: Text('Saved as "$fileName" successfully!'),
+                    ),
                   );
                 } catch (e) {
-                  scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to save: $e')));
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      backgroundColor: Colors.red,
+                      content: Text('Failed to save: $e'),
+                    ),
+                  );
                 }
               }
             },
@@ -416,7 +572,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
 
   void _handleDirectWhatsAppShare() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final whiteboardProvider = Provider.of<WhiteboardProvider>(context, listen: false);
+    final whiteboardProvider = Provider.of<WhiteboardProvider>(
+      context,
+      listen: false,
+    );
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
     scaffoldMessenger.showSnackBar(
@@ -428,10 +587,16 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     );
 
     try {
-      final pdfFile = await _storageService.generateMultiPagePdfFile(boundaryKey: _canvasKey, provider: whiteboardProvider);
+      final pdfFile = await _storageService.generateMultiPagePdfFile(
+        boundaryKey: _canvasKey,
+        provider: whiteboardProvider,
+      );
 
       final teacherId = auth.currentUid;
-      final pdfUrl = await _storageService.uploadPdfToFirebaseStorage(pdfFile, teacherId);
+      final pdfUrl = await _storageService.uploadPdfToFirebaseStorage(
+        pdfFile,
+        teacherId,
+      );
 
       final teacherName = auth.displayName;
       final classroomName = auth.activeClassroomName ?? 'Classroom';
@@ -449,15 +614,19 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         ),
       );
 
-      String whatsappUrlStr = "https://wa.me/?text=${Uri.encodeComponent(textMessage)}";
+      String whatsappUrlStr =
+          "https://wa.me/?text=${Uri.encodeComponent(textMessage)}";
 
       if (auth.students.isNotEmpty) {
         final firstStudent = auth.students.first;
         final phone = firstStudent['mobileNumber'] ?? '';
         final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
         if (cleanPhone.length >= 10) {
-          final targetPhone = cleanPhone.startsWith('91') ? cleanPhone : '91$cleanPhone';
-          whatsappUrlStr = "https://wa.me/$targetPhone?text=${Uri.encodeComponent(textMessage)}";
+          final targetPhone = cleanPhone.startsWith('91')
+              ? cleanPhone
+              : '91$cleanPhone';
+          whatsappUrlStr =
+              "https://wa.me/$targetPhone?text=${Uri.encodeComponent(textMessage)}";
         }
       }
 
@@ -465,19 +634,33 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
-        final fallbackUri = Uri.parse("https://wa.me/?text=${Uri.encodeComponent(textMessage)}");
+        final fallbackUri = Uri.parse(
+          "https://wa.me/?text=${Uri.encodeComponent(textMessage)}",
+        );
         await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
       debugPrint('Error opening WhatsApp app/web: $e');
       if (mounted) {
-        scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to open WhatsApp: $e')));
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red,
+            content: Text('Failed to open WhatsApp: $e'),
+          ),
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isSplitScreenActive) {
+      return SplitScreenView(
+        splitCount: _splitCount,
+        onExit: () => setState(() => _isSplitScreenActive = false),
+      );
+    }
+
     return SafeArea(
       top: false,
       bottom: false,
@@ -488,7 +671,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             if (!_isConnected)
               Container(
                 width: double.infinity,
-                color: const Color(0xFFDC2626), // Red strip for No Internet Connection
+                color: const Color(
+                  0xFFDC2626,
+                ), // Red strip for No Internet Connection
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -497,7 +682,11 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     SizedBox(width: 8),
                     Text(
                       'No Internet Connection',
-                      style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -509,7 +698,14 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   Consumer<WhiteboardProvider>(
                     builder: (context, provider, _) => RepaintBoundary(
                       key: _canvasKey,
-                      child: Container(color: provider.canvasBackgroundColor, child: const WhiteboardCanvas()),
+                      child: CustomPaint(
+                        painter: CanvasGridPainter(
+                          backgroundColor: provider.canvasBackgroundColor,
+                          gridType: provider.canvasGridType,
+                          panOffset: provider.canvasPanOffset,
+                        ),
+                        child: const WhiteboardCanvas(),
+                      ),
                     ),
                   ),
                   const ObjectHandles(),
@@ -531,7 +727,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                       top: 10,
                       right: 20,
                       bottom: 65,
-                      child: SlideOverviewSidebar(onClose: () => setState(() => _isSidebarOpen = false)),
+                      child: SlideOverviewSidebar(
+                        onClose: () => setState(() => _isSidebarOpen = false),
+                      ),
                     ),
                   ],
                   Positioned(
@@ -541,15 +739,21 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     child: Center(
                       child: WhiteboardToolbar(
                         onOpenRuler: () => setState(() => _showRuler = true),
-                        onOpenProtractor: () => setState(() => _showProtractor = true),
-                        onOpenSetSquare: () => setState(() => _showSetSquare = true),
-                        onOpenCompass: () => setState(() => _showCompass = true),
+                        onOpenProtractor: () =>
+                            setState(() => _showProtractor = true),
+                        onOpenSetSquare: () =>
+                            setState(() => _showSetSquare = true),
+                        onOpenCompass: () =>
+                            setState(() => _showCompass = true),
                       ),
                     ),
                   ),
                   if (_showRuler)
                     RulerWidget(
-                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 220, MediaQuery.of(context).size.height / 2 - 55),
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 220,
+                        MediaQuery.of(context).size.height / 2 - 55,
+                      ),
                       onClose: () => setState(() => _showRuler = false),
                       onDrawLine: (points) {
                         _addStrokeFromGlobal(points);
@@ -557,7 +761,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     ),
                   if (_showProtractor)
                     ProtractorWidget(
-                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 180, MediaQuery.of(context).size.height / 2 - 95),
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 180,
+                        MediaQuery.of(context).size.height / 2 - 95,
+                      ),
                       onClose: () => setState(() => _showProtractor = false),
                       onDrawAngle: (shape) {
                         _addStrokeFromGlobal(shape.strokePoints);
@@ -568,7 +775,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     ),
                   if (_showSetSquare)
                     SetSquareWidget(
-                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 140, MediaQuery.of(context).size.height / 2 - 100),
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 140,
+                        MediaQuery.of(context).size.height / 2 - 100,
+                      ),
                       onClose: () => setState(() => _showSetSquare = false),
                       onDrawLine: (points) {
                         _addStrokeFromGlobal(points);
@@ -576,7 +786,10 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     ),
                   if (_showCompass)
                     CompassWidget(
-                      initialPosition: Offset(MediaQuery.of(context).size.width / 2 - 130, MediaQuery.of(context).size.height / 2 - 130),
+                      initialPosition: Offset(
+                        MediaQuery.of(context).size.width / 2 - 130,
+                        MediaQuery.of(context).size.height / 2 - 130,
+                      ),
                       onClose: () => setState(() => _showCompass = false),
                       onDrawArc: (points) {
                         _addStrokeFromGlobal(points);
@@ -585,57 +798,138 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   Positioned(
                     bottom: 10,
                     right: 30,
-                    child: PageSwitcher(onPageCountTap: () => setState(() => _isSidebarOpen = !_isSidebarOpen)),
+                    child: PageSwitcher(
+                      onPageCountTap: () =>
+                          setState(() => _isSidebarOpen = !_isSidebarOpen),
+                    ),
                   ),
                   Positioned(
                     bottom: 10,
                     left: 24,
-                    child: _CircularActionButton(
-                      icon: LucideIcons.menu,
-                      label: 'MENU',
-                      accentColor: const Color(0xFF2563EB), // Blue Accent
-                      onTap: () => _showMenuPopup(context),
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: const Color(0xFFCBD5E1),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.16),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Menu Button
+                          InkWell(
+                            onTap: () => _showMenuPopup(context),
+                            borderRadius: BorderRadius.circular(10),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 2,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    LucideIcons.menu,
+                                    size: 17,
+                                    color: Color(0xFF334155),
+                                  ),
+                                  SizedBox(height: 1),
+                                  Text(
+                                    'Menu',
+                                    style: TextStyle(
+                                      color: Color(0xFF334155),
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 22,
+                            color: const Color(0xFFCBD5E1),
+                          ),
+                          // SplitScreen Button
+                          InkWell(
+                            onTap: () => _showSplitScreenDialog(context),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 2,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 5.5,
+                                        height: 14,
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: const Color(0xFF334155),
+                                            width: 1.4,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            2,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Container(
+                                        width: 5.5,
+                                        height: 14,
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: const Color(0xFF334155),
+                                            width: 1.4,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            2,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 1.5),
+                                  const Text(
+                                    'SplitScreen',
+                                    style: TextStyle(
+                                      color: Color(0xFF334155),
+                                      fontSize: 9.0,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CircularActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color accentColor;
-  final VoidCallback onTap;
-
-  const _CircularActionButton({required this.icon, required this.label, required this.accentColor, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: accentColor, width: 1),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 3))],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: accentColor, size: 16),
-            const SizedBox(height: 1),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.bold, letterSpacing: 0.1),
             ),
           ],
         ),

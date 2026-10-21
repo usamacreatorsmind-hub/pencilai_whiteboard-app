@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Allow read access to subjects_master for everyone
+    match /subjects_master/{document} {
+      allow read, write: if true;
+    }
+
+    // Allow teachers / users profiles
+    match /teachers/{teacherId} {
+      allow read, write: if true;
+    }
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    match /Users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Allow classrooms
+    match /classrooms/{classroomId} {
+      allow read, write: if true;
+    }
+
+    // Allow students collection
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    // Allow conversions
+    match /conversions/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

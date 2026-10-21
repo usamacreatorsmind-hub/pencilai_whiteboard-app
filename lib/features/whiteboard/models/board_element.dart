@@ -52,7 +52,12 @@ abstract class BoardElement {
     }
   }
 
-  BoardElement copyWith({String? id, Offset? position, double? rotation, double? scale});
+  BoardElement copyWith({
+    String? id,
+    Offset? position,
+    double? rotation,
+    double? scale,
+  });
 
   Rect getRawBounds() {
     if (_cachedBounds != null) return _cachedBounds!;
@@ -80,22 +85,55 @@ abstract class BoardElement {
       bounds = Rect.fromPoints(shape.position, shape.endPoint);
     } else if (this is ImageElement) {
       final img = this as ImageElement;
-      bounds = Rect.fromLTWH(img.position.dx, img.position.dy, img.size.width, img.size.height);
+      bounds = Rect.fromLTWH(
+        img.position.dx,
+        img.position.dy,
+        img.size.width,
+        img.size.height,
+      );
     } else if (this is DocumentElement) {
       final doc = this as DocumentElement;
-      bounds = Rect.fromLTWH(doc.position.dx, doc.position.dy, doc.size.width, doc.size.height);
+      bounds = Rect.fromLTWH(
+        doc.position.dx,
+        doc.position.dy,
+        doc.size.width,
+        doc.size.height,
+      );
     } else if (this is TextElement) {
       final txt = this as TextElement;
-      bounds = Rect.fromLTWH(txt.position.dx, txt.position.dy, txt.size.width, txt.size.height);
+      if (txt.size.width <= 0 || txt.size.height <= 0) {
+        txt.size = txt.computeActualSize();
+      }
+      bounds = Rect.fromLTWH(
+        txt.position.dx,
+        txt.position.dy,
+        txt.size.width,
+        txt.size.height,
+      );
     } else if (this is TableElement) {
       final tbl = this as TableElement;
-      bounds = Rect.fromLTWH(tbl.position.dx, tbl.position.dy, tbl.size.width, tbl.size.height);
+      bounds = Rect.fromLTWH(
+        tbl.position.dx,
+        tbl.position.dy,
+        tbl.size.width,
+        tbl.size.height,
+      );
     } else if (this is MindMapElement) {
       final mm = this as MindMapElement;
-      bounds = Rect.fromLTWH(mm.position.dx, mm.position.dy, mm.size.width, mm.size.height);
+      bounds = Rect.fromLTWH(
+        mm.position.dx,
+        mm.position.dy,
+        mm.size.width,
+        mm.size.height,
+      );
     } else if (this is ChemicalElementElement) {
       final ce = this as ChemicalElementElement;
-      bounds = Rect.fromLTWH(ce.position.dx, ce.position.dy, ce.size.width, ce.size.height);
+      bounds = Rect.fromLTWH(
+        ce.position.dx,
+        ce.position.dy,
+        ce.size.width,
+        ce.size.height,
+      );
     } else {
       bounds = Rect.fromLTWH(position.dx, position.dy, 100, 100);
     }

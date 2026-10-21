@@ -14,6 +14,7 @@ import '../models/chemical_element_element.dart';
 import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
 import '../widgets/whiteboard_canvas.dart';
+import '../widgets/canvas/canvas_grid_painter.dart';
 
 enum WhiteboardTool { pen, eraser, shape, image, select, preview }
 
@@ -57,7 +58,16 @@ class RemoveElementsCommand extends Command {
   }
 }
 
-enum HandleDirection { topLeft, topCenter, topRight, middleRight, bottomRight, bottomCenter, bottomLeft, middleLeft }
+enum HandleDirection {
+  topLeft,
+  topCenter,
+  topRight,
+  middleRight,
+  bottomRight,
+  bottomCenter,
+  bottomLeft,
+  middleLeft,
+}
 
 class MultiTransformCommand extends Command {
   final int pageIndex;
@@ -68,7 +78,9 @@ class MultiTransformCommand extends Command {
   @override
   void execute(WhiteboardProvider provider) {
     for (var data in transforms) {
-      final element = provider.pages[pageIndex].elements.firstWhere((e) => e.id == data.id);
+      final element = provider.pages[pageIndex].elements.firstWhere(
+        (e) => e.id == data.id,
+      );
       element.position = data.newPos;
       element.rotation = data.newRot;
       element.scale = data.newScale;
@@ -85,7 +97,9 @@ class MultiTransformCommand extends Command {
   @override
   void undo(WhiteboardProvider provider) {
     for (var data in transforms) {
-      final element = provider.pages[pageIndex].elements.firstWhere((e) => e.id == data.id);
+      final element = provider.pages[pageIndex].elements.firstWhere(
+        (e) => e.id == data.id,
+      );
       element.position = data.oldPos;
       element.rotation = data.oldRot;
       element.scale = data.oldScale;
@@ -146,7 +160,9 @@ class ClearPageCommand extends Command {
 }
 
 class WhiteboardProvider extends ChangeNotifier {
-  final List<BoardPage> _pages = [BoardPage(id: const Uuid().v4(), elements: [])];
+  final List<BoardPage> _pages = [
+    BoardPage(id: const Uuid().v4(), elements: []),
+  ];
   int _currentPageIndex = 0;
   int _boardVersion = 0;
 
@@ -201,12 +217,17 @@ class WhiteboardProvider extends ChangeNotifier {
   double get thinStrokeWidth => _thinPenStrokeWidths[_thinPenType] ?? 2.0;
   double get thickStrokeWidth => _thickPenStrokeWidths[_thickPenType] ?? 3.0;
 
-  Color get currentColor => _activePenProfile == PenProfile.thin ? _thinColor : _thickColor;
-  PenType get currentPenType => _activePenProfile == PenProfile.thin ? _thinPenType : _thickPenType;
+  Color get currentColor =>
+      _activePenProfile == PenProfile.thin ? _thinColor : _thickColor;
+  PenType get currentPenType =>
+      _activePenProfile == PenProfile.thin ? _thinPenType : _thickPenType;
 
   double get strokeWidth {
-    final map = _activePenProfile == PenProfile.thin ? _thinPenStrokeWidths : _thickPenStrokeWidths;
-    return map[currentPenType] ?? (_activePenProfile == PenProfile.thin ? 2.0 : 3.0);
+    final map = _activePenProfile == PenProfile.thin
+        ? _thinPenStrokeWidths
+        : _thickPenStrokeWidths;
+    return map[currentPenType] ??
+        (_activePenProfile == PenProfile.thin ? 2.0 : 3.0);
   }
 
   double get eraserSize => _eraserSize;
@@ -265,15 +286,41 @@ class WhiteboardProvider extends ChangeNotifier {
   Color _canvasBackgroundColor = Colors.white;
   Color get canvasBackgroundColor => _canvasBackgroundColor;
 
+  CanvasGridType _canvasGridType = CanvasGridType.none;
+  CanvasGridType get canvasGridType => _canvasGridType;
+
   void setCanvasBackgroundColor(Color color) {
     _canvasBackgroundColor = color;
     _notify();
   }
 
+  void setCanvasGridType(CanvasGridType type) {
+    _canvasGridType = type;
+    _notify();
+  }
+
+  static const Map<int, String> kPresetColorNames = {
+    0xFFFFFFFF: 'Cloud White',
+    0xFFF8FAFC: 'Cloud White',
+    0xFFFDE8D7: 'Warm Peach',
+    0xFFE2F0D9: 'Soft Mint',
+    0xFFD0E8F2: 'Quiet blue',
+    0xFFE1D9F0: 'Soft Lavender',
+    0xFFFADCDD: 'Soft Rose',
+    0xFF1E1E1E: 'Pitch Black',
+    0xFF36322E: 'Dark Charcoal',
+    0xFF21352A: 'Forest Green',
+    0xFF1D3557: 'Quiet blue',
+    0xFF2D2545: 'Midnight Violet',
+  };
+
+  String get canvasBackgroundColorName {
+    return kPresetColorNames[_canvasBackgroundColor.toARGB32()] ??
+        'Custom Color';
+  }
+
   Offset _canvasPanOffset = Offset.zero;
   Offset get canvasPanOffset => _canvasPanOffset;
-
-
 
   // Screen (viewport) coords -> canvas (element) coords
   Offset screenToCanvas(Offset p) => p - _canvasPanOffset;
@@ -331,8 +378,12 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void updateActiveDocumentPreviewUrl(String url) {
     if (_activeOverlayDocument != null) {
-      _activeOverlayDocument = _activeOverlayDocument!.copyWith(remotePreviewUrl: url);
-      final index = currentPage.elements.indexWhere((e) => e.id == _activeOverlayDocument!.id);
+      _activeOverlayDocument = _activeOverlayDocument!.copyWith(
+        remotePreviewUrl: url,
+      );
+      final index = currentPage.elements.indexWhere(
+        (e) => e.id == _activeOverlayDocument!.id,
+      );
       if (index != -1) {
         currentPage.elements[index] = _activeOverlayDocument!;
       }
@@ -386,7 +437,8 @@ class WhiteboardProvider extends ChangeNotifier {
   /// Only notifies listeners (toolbar) — does NOT invalidate the board cache,
   /// so switching mid-stroke stays smooth.
   bool applyDetectedNib(PenProfile target, double radius) {
-    if (!_isAutoNibDetectionEnabled || _currentTool != WhiteboardTool.pen) return false;
+    if (!_isAutoNibDetectionEnabled || _currentTool != WhiteboardTool.pen)
+      return false;
     if (radius > 0) _lastDetectedRadius = radius;
     if (_activePenProfile == target) return false;
     _activePenProfile = target;
@@ -409,7 +461,9 @@ class WhiteboardProvider extends ChangeNotifier {
 
       _lastDetectedRadius = radius;
       // Original rule: > 1.5 = thick nib, otherwise thin nib
-      targetProfile = radius > _nibRadiusThreshold ? PenProfile.thick : PenProfile.thin;
+      targetProfile = radius > _nibRadiusThreshold
+          ? PenProfile.thick
+          : PenProfile.thin;
     }
 
     if (_activePenProfile != targetProfile) {
@@ -436,7 +490,9 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void setStrokeWidth(double width) {
-    final map = _activePenProfile == PenProfile.thin ? _thinPenStrokeWidths : _thickPenStrokeWidths;
+    final map = _activePenProfile == PenProfile.thin
+        ? _thinPenStrokeWidths
+        : _thickPenStrokeWidths;
     map[currentPenType] = width.clamp(minStrokeWidth, maxStrokeWidth);
     _notify();
   }
@@ -523,7 +579,9 @@ class WhiteboardProvider extends ChangeNotifier {
       final d = p - center;
       final cosA = cos(element.rotation);
       final sinA = sin(element.rotation);
-      return center + Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) * element.scale;
+      return center +
+          Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) *
+              element.scale;
     }
 
     if (element is StrokeElement) {
@@ -538,25 +596,32 @@ class WhiteboardProvider extends ChangeNotifier {
     }
 
     if (element is ShapeElement) {
-      if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
+      if (element.shapeType == ShapeType.line ||
+          element.shapeType == ShapeType.arrow) {
         return lassoPath.contains(transform(element.position)) &&
-               lassoPath.contains(transform(element.endPoint));
+            lassoPath.contains(transform(element.endPoint));
       }
       final rect = Rect.fromPoints(element.position, element.endPoint);
       return lassoPath.contains(transform(rect.topLeft)) &&
-             lassoPath.contains(transform(rect.topRight)) &&
-             lassoPath.contains(transform(rect.bottomLeft)) &&
-             lassoPath.contains(transform(rect.bottomRight)) &&
-             lassoPath.contains(transform(rect.center));
+          lassoPath.contains(transform(rect.topRight)) &&
+          lassoPath.contains(transform(rect.bottomLeft)) &&
+          lassoPath.contains(transform(rect.bottomRight)) &&
+          lassoPath.contains(transform(rect.center));
     }
 
     // For TextElement, ImageElement, TableElement, MindMapElement, DocumentElement
     if (rawBounds.isEmpty) return false;
-    return lassoPath.contains(transform(rawBounds.topLeft)) &&
-           lassoPath.contains(transform(rawBounds.topRight)) &&
-           lassoPath.contains(transform(rawBounds.bottomLeft)) &&
-           lassoPath.contains(transform(rawBounds.bottomRight)) &&
-           lassoPath.contains(transform(rawBounds.center));
+    final centerPt = transform(rawBounds.center);
+    if (lassoPath.contains(centerPt)) return true;
+
+    final corners = [
+      transform(rawBounds.topLeft),
+      transform(rawBounds.topRight),
+      transform(rawBounds.bottomLeft),
+      transform(rawBounds.bottomRight),
+    ];
+    final insideCount = corners.where((p) => lassoPath.contains(p)).length;
+    return insideCount >= 2;
   }
 
   // Commands
@@ -570,7 +635,9 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void removeSelectedElements() {
     if (_selectedElementIds.isEmpty) return;
-    final toRemove = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
+    final toRemove = currentPage.elements
+        .where((e) => _selectedElementIds.contains(e.id))
+        .toList();
     final command = RemoveElementsCommand(toRemove, _currentPageIndex);
     _executeCommand(command);
     clearSelection();
@@ -609,9 +676,11 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   // Mind Map Helper Operations
-  void addMindMapChildNode(String mindMapId) => _mutateMindMap(mindMapId, (el) => el.addChild(el.selectedNodeId));
+  void addMindMapChildNode(String mindMapId) =>
+      _mutateMindMap(mindMapId, (el) => el.addChild(el.selectedNodeId));
 
-  void addMindMapSiblingNode(String mindMapId) => _mutateMindMap(mindMapId, (el) => el.addSibling(el.selectedNodeId));
+  void addMindMapSiblingNode(String mindMapId) =>
+      _mutateMindMap(mindMapId, (el) => el.addSibling(el.selectedNodeId));
   // Board controller ke andar paste karo (jahan currentPage, _boardVersion, _notify() hain).
   // Imports: mind_map_element.dart
 
@@ -659,7 +728,8 @@ class WhiteboardProvider extends ChangeNotifier {
   // Node operations
   // -----------------------------------------------------------------------------
 
-  void addMindMapParentNode(String mindMapId) => _mutateMindMap(mindMapId, (el) => el.addParent(el.selectedNodeId));
+  void addMindMapParentNode(String mindMapId) =>
+      _mutateMindMap(mindMapId, (el) => el.addParent(el.selectedNodeId));
 
   void toggleMindMapNodeCollapse(String mindMapId, String nodeId) {
     _mutateMindMap(mindMapId, (el) {
@@ -689,7 +759,8 @@ class WhiteboardProvider extends ChangeNotifier {
   void updateMindMapNodeColor(String mindMapId, String nodeId, Color color) {
     _mutateMindMap(mindMapId, (el) {
       final node = el.root.findNode(nodeId);
-      if (node != null) node.fillColor = color; // layout badalne ki zaroorat nahi
+      if (node != null)
+        node.fillColor = color; // layout badalne ki zaroorat nahi
     });
   }
 
@@ -803,19 +874,29 @@ class WhiteboardProvider extends ChangeNotifier {
   void resizeSelectedElement(HandleDirection direction, Offset delta) {
     if (_selectedElementIds.isEmpty) return;
 
-    final selectedElements = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
+    final selectedElements = currentPage.elements
+        .where((e) => _selectedElementIds.contains(e.id))
+        .toList();
     if (selectedElements.isEmpty) return;
 
     // 1. Calculate Group Bounds and Group Center
     Rect groupRect = selectedElements[0].getRawBounds();
     if (selectedElements.length == 1) {
       final e = selectedElements[0];
-      groupRect = Rect.fromCenter(center: groupRect.center, width: groupRect.width * e.scale, height: groupRect.height * e.scale);
+      groupRect = Rect.fromCenter(
+        center: groupRect.center,
+        width: groupRect.width * e.scale,
+        height: groupRect.height * e.scale,
+      );
     } else {
       for (var i = 1; i < selectedElements.length; i++) {
         final e = selectedElements[i];
         final r = e.getRawBounds();
-        final visualR = Rect.fromCenter(center: r.center, width: r.width * e.scale, height: r.height * e.scale);
+        final visualR = Rect.fromCenter(
+          center: r.center,
+          width: r.width * e.scale,
+          height: r.height * e.scale,
+        );
         groupRect = groupRect.expandToInclude(visualR);
       }
     }
@@ -863,16 +944,31 @@ class WhiteboardProvider extends ChangeNotifier {
       }
 
       if (element is ImageElement) {
-        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(20.0, element.size.width * scaleFactor),
+          max(20.0, element.size.height * scaleFactor),
+        );
       } else if (element is DocumentElement) {
-        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(20.0, element.size.width * scaleFactor),
+          max(20.0, element.size.height * scaleFactor),
+        );
       } else if (element is TextElement) {
-        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(20.0, element.size.width * scaleFactor),
+          max(20.0, element.size.height * scaleFactor),
+        );
         element.fontSize = (element.fontSize * scaleFactor).clamp(8.0, 200.0);
       } else if (element is TableElement) {
-        element.size = Size(max(40.0, element.size.width * scaleFactor), max(30.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(40.0, element.size.width * scaleFactor),
+          max(30.0, element.size.height * scaleFactor),
+        );
       } else if (element is ChemicalElementElement) {
-        element.size = Size(max(60.0, element.size.width * scaleFactor), max(70.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(60.0, element.size.width * scaleFactor),
+          max(70.0, element.size.height * scaleFactor),
+        );
       } else if (element is ShapeElement) {
         final center = element.getRawBounds().center;
         element.position = center + (element.position - center) * scaleFactor;
@@ -887,7 +983,11 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify();
   }
 
-  void updateElementTransform(Offset delta, double rotationDelta, double scaleDelta) {
+  void updateElementTransform(
+    Offset delta,
+    double rotationDelta,
+    double scaleDelta,
+  ) {
     Offset? groupCenter;
     if (_selectedElementIds.length > 1) {
       groupCenter = _getSelectionCenter();
@@ -921,8 +1021,10 @@ class WhiteboardProvider extends ChangeNotifier {
         final double cosTheta = cos(rotationDelta);
         final double sinTheta = sin(rotationDelta);
 
-        final double newX = relativePos.dx * cosTheta - relativePos.dy * sinTheta;
-        final double newY = relativePos.dx * sinTheta + relativePos.dy * cosTheta;
+        final double newX =
+            relativePos.dx * cosTheta - relativePos.dy * sinTheta;
+        final double newY =
+            relativePos.dx * sinTheta + relativePos.dy * cosTheta;
 
         final Offset newRelativePos = Offset(newX, newY);
         final Offset posDelta = newRelativePos - relativePos;
@@ -945,12 +1047,21 @@ class WhiteboardProvider extends ChangeNotifier {
       // Multiplicative scaling prevents distortion in groups
       element.scale = (element.scale * scaleFactor).clamp(0.1, 10.0);
       if (element is TextElement && scaleDelta != 0.0) {
-        element.size = Size(max(20.0, element.size.width * scaleFactor), max(20.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(20.0, element.size.width * scaleFactor),
+          max(20.0, element.size.height * scaleFactor),
+        );
         element.fontSize = (element.fontSize * scaleFactor).clamp(8.0, 200.0);
       } else if (element is TableElement && scaleDelta != 0.0) {
-        element.size = Size(max(40.0, element.size.width * scaleFactor), max(30.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(40.0, element.size.width * scaleFactor),
+          max(30.0, element.size.height * scaleFactor),
+        );
       } else if (element is ChemicalElementElement && scaleDelta != 0.0) {
-        element.size = Size(max(60.0, element.size.width * scaleFactor), max(70.0, element.size.height * scaleFactor));
+        element.size = Size(
+          max(60.0, element.size.width * scaleFactor),
+          max(70.0, element.size.height * scaleFactor),
+        );
       }
 
       element.invalidateBounds();
@@ -971,15 +1082,25 @@ class WhiteboardProvider extends ChangeNotifier {
 
   Offset _getSelectionCenter() {
     if (_selectedElementIds.isEmpty) return Offset.zero;
-    final selected = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
+    final selected = currentPage.elements
+        .where((e) => _selectedElementIds.contains(e.id))
+        .toList();
 
     Rect bounds = selected[0].getRawBounds();
-    bounds = Rect.fromCenter(center: bounds.center, width: bounds.width * selected[0].scale, height: bounds.height * selected[0].scale);
+    bounds = Rect.fromCenter(
+      center: bounds.center,
+      width: bounds.width * selected[0].scale,
+      height: bounds.height * selected[0].scale,
+    );
 
     for (int i = 1; i < selected.length; i++) {
       final e = selected[i];
       final r = e.getRawBounds();
-      final visualR = Rect.fromCenter(center: r.center, width: r.width * e.scale, height: r.height * e.scale);
+      final visualR = Rect.fromCenter(
+        center: r.center,
+        width: r.width * e.scale,
+        height: r.height * e.scale,
+      );
       bounds = bounds.expandToInclude(visualR);
     }
     return bounds.center;
@@ -1011,7 +1132,10 @@ class WhiteboardProvider extends ChangeNotifier {
       );
     }
 
-    final command = MultiTransformCommand(pageIndex: _currentPageIndex, transforms: transforms);
+    final command = MultiTransformCommand(
+      pageIndex: _currentPageIndex,
+      transforms: transforms,
+    );
     _undoStack.add(command);
     _redoStack.clear();
     _startTransforms.clear();
@@ -1031,7 +1155,15 @@ class WhiteboardProvider extends ChangeNotifier {
   /// Jo elements abhi canvas par dikh rahe hain wahi erase/hit hone chahiye.
   /// Overlay band hai to docPage == null wale, open hai to current overlay page wale.
   bool _isInCurrentView(BoardElement e) {
-    return _isDocumentOverlayOpen ? e.docPage == _overlayCurrentPage : e.docPage == null;
+    return _isDocumentOverlayOpen
+        ? e.docPage == _overlayCurrentPage
+        : e.docPage == null;
+  }
+
+  static int _splitIdCounter = 0;
+
+  static String _nextPieceId(String parentId) {
+    return '${parentId}_p${++_splitIdCounter}';
   }
 
   void partialErase(Offset position, double radius, {Offset? lastPos}) {
@@ -1060,18 +1192,24 @@ class WhiteboardProvider extends ChangeNotifier {
           if (seg.length > 1) {
             pieces.add(
               element.copyWith(
-                id: const Uuid().v4(),
+                id: _nextPieceId(element.id),
                 points: seg,
                 position: seg.first,
-                docPage: _isDocumentOverlayOpen ? _overlayCurrentPage : element.docPage,
+                docPage: _isDocumentOverlayOpen
+                    ? _overlayCurrentPage
+                    : element.docPage,
               ),
             );
           }
         }
         replacements[element.id] = pieces;
       } else if (element is ShapeElement) {
-        if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
-          final linePoints = _interpolatePoints(element.position, element.endPoint);
+        if (element.shapeType == ShapeType.line ||
+            element.shapeType == ShapeType.arrow) {
+          final linePoints = _interpolatePoints(
+            element.position,
+            element.endPoint,
+          );
           final segments = _splitStroke(linePoints, p1, p2, radiusSq);
           if (segments == null) continue;
 
@@ -1080,7 +1218,7 @@ class WhiteboardProvider extends ChangeNotifier {
             if (seg.length > 1) {
               pieces.add(
                 StrokeElement(
-                  id: const Uuid().v4(),
+                  id: _nextPieceId(element.id),
                   position: seg.first,
                   points: seg,
                   color: element.color,
@@ -1093,7 +1231,10 @@ class WhiteboardProvider extends ChangeNotifier {
           replacements[element.id] = pieces;
         } else {
           samples ??= _sweepSamples(p1, p2, radius);
-          final inflated = Rect.fromPoints(element.position, element.endPoint).inflate(radius);
+          final inflated = Rect.fromPoints(
+            element.position,
+            element.endPoint,
+          ).inflate(radius);
           bool hit = false;
           for (final s in samples) {
             if (inflated.contains(s)) {
@@ -1125,31 +1266,43 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify(); // poore erase call ke liye sirf ek notify
   }
 
+  static bool _isPointInsideCapsule(
+    Offset p,
+    Offset a,
+    double vx,
+    double vy,
+    double l2,
+    double radiusSq,
+  ) {
+    if (l2 == 0.0) {
+      final dx = p.dx - a.dx;
+      final dy = p.dy - a.dy;
+      return dx * dx + dy * dy < radiusSq;
+    }
+    double t = ((p.dx - a.dx) * vx + (p.dy - a.dy) * vy) / l2;
+    t = t.clamp(0.0, 1.0);
+    final dx = p.dx - (a.dx + t * vx);
+    final dy = p.dy - (a.dy + t * vy);
+    return dx * dx + dy * dy < radiusSq;
+  }
+
   /// Points ko eraser capsule (p1->p2, radius) ke hisaab se todta hai.
   /// Agar koi point capsule ke andar nahi hai to null return karta hai (koi change nahi).
-  List<List<Offset>>? _splitStroke(List<Offset> points, Offset a, Offset b, double radiusSq) {
+  List<List<Offset>>? _splitStroke(
+    List<Offset> points,
+    Offset a,
+    Offset b,
+    double radiusSq,
+  ) {
     if (points.isEmpty) return null;
 
     final double vx = b.dx - a.dx;
     final double vy = b.dy - a.dy;
     final double l2 = vx * vx + vy * vy;
 
-    bool inside(Offset p) {
-      if (l2 == 0.0) {
-        final dx = p.dx - a.dx;
-        final dy = p.dy - a.dy;
-        return dx * dx + dy * dy < radiusSq;
-      }
-      double t = ((p.dx - a.dx) * vx + (p.dy - a.dy) * vy) / l2;
-      t = t.clamp(0.0, 1.0);
-      final dx = p.dx - (a.dx + t * vx);
-      final dy = p.dy - (a.dy + t * vy);
-      return dx * dx + dy * dy < radiusSq;
-    }
-
     int first = -1;
     for (int i = 0; i < points.length; i++) {
-      if (inside(points[i])) {
+      if (_isPointInsideCapsule(points[i], a, vx, vy, l2, radiusSq)) {
         first = i;
         break;
       }
@@ -1161,7 +1314,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
     for (int i = 0; i < points.length; i++) {
       final p = points[i];
-      if (i >= first && inside(p)) {
+      if (i >= first && _isPointInsideCapsule(p, a, vx, vy, l2, radiusSq)) {
         if (current != null && current.isNotEmpty) {
           result.add(current);
           current = null;
@@ -1188,7 +1341,9 @@ class WhiteboardProvider extends ChangeNotifier {
   List<Offset> _interpolatePoints(Offset start, Offset end) {
     final double dist = (end - start).distance;
     final int steps = max(1, (dist / 2).ceil());
-    return [for (int i = 0; i <= steps; i++) Offset.lerp(start, end, i / steps)!];
+    return [
+      for (int i = 0; i <= steps; i++) Offset.lerp(start, end, i / steps)!,
+    ];
   }
 
   void _executeCommand(Command command) {
@@ -1271,23 +1426,38 @@ class WhiteboardProvider extends ChangeNotifier {
           if ((point - localPosition).distance < threshold) return element;
         }
       } else if (element is ShapeElement) {
-        if (element.shapeType == ShapeType.line || element.shapeType == ShapeType.arrow) {
-          if (_distToSegment(localPosition, element.position, element.endPoint) < threshold) return element;
+        if (element.shapeType == ShapeType.line ||
+            element.shapeType == ShapeType.arrow) {
+          if (_distToSegment(
+                localPosition,
+                element.position,
+                element.endPoint,
+              ) <
+              threshold)
+            return element;
         } else {
           final rect = Rect.fromPoints(element.position, element.endPoint);
-          if (rect.inflate(threshold / 2).contains(localPosition)) return element;
+          if (rect.inflate(threshold / 2).contains(localPosition))
+            return element;
         }
       } else if (element is MindMapElement) {
-        final local = _toElementLocal(element, localPosition)- element.position;
+        final local =
+            _toElementLocal(element, localPosition) - element.position;
         if (element.nodeAt(local, inflate: 8) != null) return element;
+      } else if (element is TextElement) {
+        final local =
+            _toElementLocal(element, localPosition) - element.position;
+        final raw = element.getRawBounds();
+        // Generous tap hit area for Text (18px padding around actual text size)
+        if ((Offset.zero & raw.size).inflate(18).contains(local)) return element;
       } else if (element is ImageElement ||
           element is DocumentElement ||
           element is TableElement ||
-          element is TextElement ||
           element is ChemicalElementElement) {
-        final local = _toElementLocal(element, localPosition) - element.position;
+        final local =
+            _toElementLocal(element, localPosition) - element.position;
         final raw = element.getRawBounds();
-        if ((Offset.zero & raw.size).inflate(6).contains(local)) return element;
+        if ((Offset.zero & raw.size).inflate(10).contains(local)) return element;
       }
     }
     return null;
@@ -1302,7 +1472,10 @@ class WhiteboardProvider extends ChangeNotifier {
       final d = q - c;
       final cosA = cos(-el.rotation);
       final sinA = sin(-el.rotation);
-      q = c + Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) / el.scale;
+      q =
+          c +
+          Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) /
+              el.scale;
     }
     return q;
   }
@@ -1310,9 +1483,11 @@ class WhiteboardProvider extends ChangeNotifier {
   double _distToSegment(Offset p, Offset v, Offset w) {
     double l2 = (v - w).distanceSquared;
     if (l2 == 0.0) return (p - v).distance;
-    double t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
+    double t =
+        ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
     t = t.clamp(0.0, 1.0);
-    return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy))).distance;
+    return (p - Offset(v.dx + t * (w.dx - v.dx), v.dy + t * (w.dy - v.dy)))
+        .distance;
   }
 
   final Map<String, Size> _defaultImageSizes = {};
@@ -1345,13 +1520,23 @@ class WhiteboardProvider extends ChangeNotifier {
             }
 
             element.size = Size(newW, newH);
-            element.position = Offset((screenSize.width - newW) / 2, (screenSize.height - newH) / 2)- _canvasPanOffset;
+            element.position =
+                Offset(
+                  (screenSize.width - newW) / 2,
+                  (screenSize.height - newH) / 2,
+                ) -
+                _canvasPanOffset;
             _fullScreenImages.add(elementId);
           } else {
             final defSize = _defaultImageSizes[elementId];
             if (defSize != null) {
               element.size = defSize;
-              element.position = Offset((screenSize.width - defSize.width) / 2, (screenSize.height - defSize.height) / 2)- _canvasPanOffset;
+              element.position =
+                  Offset(
+                    (screenSize.width - defSize.width) / 2,
+                    (screenSize.height - defSize.height) / 2,
+                  ) -
+                  _canvasPanOffset;
             }
             _fullScreenImages.remove(elementId);
           }
@@ -1381,7 +1566,11 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> generateAiContent({required String type, required bool isWholeDoc, bool forSelectedOnly = false}) async {
+  Future<void> generateAiContent({
+    required String type,
+    required bool isWholeDoc,
+    bool forSelectedOnly = false,
+  }) async {
     _isAiPanelOpen = true;
     _isAiLoading = true;
     _aiTitle = type;
@@ -1392,8 +1581,12 @@ class WhiteboardProvider extends ChangeNotifier {
     List<String> imagePaths = [];
 
     if (forSelectedOnly && _selectedElementIds.isNotEmpty) {
-      contentBuffer.writeln('--- Selected Content from Slide ${_currentPageIndex + 1} ---');
-      final selectedElements = currentPage.elements.where((e) => _selectedElementIds.contains(e.id)).toList();
+      contentBuffer.writeln(
+        '--- Selected Content from Slide ${_currentPageIndex + 1} ---',
+      );
+      final selectedElements = currentPage.elements
+          .where((e) => _selectedElementIds.contains(e.id))
+          .toList();
       for (var el in selectedElements) {
         if (el is ImageElement && el.imageUrl.isNotEmpty) {
           imagePaths.add(el.imageUrl);
@@ -1404,7 +1597,8 @@ class WhiteboardProvider extends ChangeNotifier {
         }
       }
       if (imagePaths.isEmpty && canvasKey != null) {
-        final canvasImagePath = await BoardStorageService().captureCanvasToTempFile(canvasKey!);
+        final canvasImagePath = await BoardStorageService()
+            .captureCanvasToTempFile(canvasKey!);
         if (canvasImagePath != null) {
           imagePaths.add(canvasImagePath);
         }
@@ -1435,10 +1629,13 @@ class WhiteboardProvider extends ChangeNotifier {
 
     // If no slide images or documents were found, but canvasKey is available, capture the current canvas (freehand writing/drawings)!
     if (imagePaths.isEmpty && canvasKey != null) {
-      final canvasImagePath = await BoardStorageService().captureCanvasToTempFile(canvasKey!);
+      final canvasImagePath = await BoardStorageService()
+          .captureCanvasToTempFile(canvasKey!);
       if (canvasImagePath != null) {
         imagePaths.add(canvasImagePath);
-        contentBuffer.writeln('Handwritten notes / drawings on whiteboard canvas.');
+        contentBuffer.writeln(
+          'Handwritten notes / drawings on whiteboard canvas.',
+        );
       }
     }
 
@@ -1455,18 +1652,26 @@ class WhiteboardProvider extends ChangeNotifier {
 
     String result = '';
     if (type == 'Quick Quiz') {
-      result = await _aiService.generateQuickQuiz(contentText, imagePaths: imagePaths);
+      result = await _aiService.generateQuickQuiz(
+        contentText,
+        imagePaths: imagePaths,
+      );
     } else if (type == 'Homework') {
-      result = await _aiService.generateHomework(contentText, imagePaths: imagePaths);
+      result = await _aiService.generateHomework(
+        contentText,
+        imagePaths: imagePaths,
+      );
     } else if (type == 'Summary') {
-      result = await _aiService.generateSummary(contentText, imagePaths: imagePaths);
+      result = await _aiService.generateSummary(
+        contentText,
+        imagePaths: imagePaths,
+      );
     }
 
     _aiResultText = result;
     _isAiLoading = false;
     _notify();
   }
-
 
   /// Naya element ko abhi screen par jo dikh raha hai uske center me rakhta hai.
   /// Table, MindMap, Image, PPT/PDF, Text, Shape sab ke liye chalta hai.

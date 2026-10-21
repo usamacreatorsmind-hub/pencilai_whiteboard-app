@@ -1,0 +1,20 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /temp_uploads/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /converted_pdfs/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /temp_previews/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /whiteboard_notes/{allPaths=**} {
+      allow read, write: if true;
+    }
+    match /class_notes/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "pencilaiboardapp"
+  },
+  "targets": {
+    "pencilaiboardapp": {
+      "storage": {
+        "main": [
+          "pencilaiboardapp.firebasestorage.app"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

@@ -1,0 +1,13 @@
+{
+  "name": "libreoffice-cloud-run-service",
+  "version": "1.0.0",
+  "description": "Headless LibreOffice PPT to PDF conversion service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}
