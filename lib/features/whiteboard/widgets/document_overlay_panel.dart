@@ -1,16 +1,10 @@
 import 'dart:io';
-import 'dart:ui' as ui;
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:uuid/uuid.dart';
 import 'package:pdfx/pdfx.dart';
 import '../state/whiteboard_provider.dart';
 import '../models/document_element.dart';
-import '../models/image_element.dart';
 import '../services/document_preview_service.dart';
 import '../../../widgets/pptx_viewer.dart';
 
@@ -22,11 +16,8 @@ class DocumentOverlayPanel extends StatefulWidget {
   State<DocumentOverlayPanel> createState() => _DocumentOverlayPanelState();
 }
 
+
 class _DocumentOverlayPanelState extends State<DocumentOverlayPanel> {
-  double _panelWidth = 580.0;
-  double _topOffset = 0.0;
-  double _bottomOffset = 0.0;
-  bool _isImporting = false;
   bool _isMinimized = false;
   String? _lastDocId;
 
@@ -34,125 +25,6 @@ class _DocumentOverlayPanelState extends State<DocumentOverlayPanel> {
   int _totalPages = 10;
 
   final GlobalKey _previewBoundaryKey = GlobalKey();
-
-  Future<void> _importSlideToWhiteboard(BuildContext context) async {
-    if (_isImporting) return;
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
-
-    setState(() => _isImporting = true);
-
-    try {
-      final doc = provider.activeOverlayDocument;
-      File? pdfFile;
-      if (doc != null && doc.fileName.toLowerCase().endsWith('.pdf')) {
-        pdfFile = File(doc.filePath);
-      } else if (doc != null) {
-        final tempDir = await getTemporaryDirectory();
-        final converted = File('${tempDir.path}/${doc.id}_converted.pdf');
-        if (await converted.exists() && (await converted.length()) > 0) {
-          pdfFile = converted;
-        }
-      }
-
-      // Native PDF / Converted PPT Page Rendering (Pixel-perfect single slide extraction)
-      if (pdfFile != null && await pdfFile.exists()) {
-        final pdfDoc = await PdfDocument.openFile(pdfFile.path);
-        final targetPageNum = _currentPage.clamp(1, pdfDoc.pagesCount);
-        final page = await pdfDoc.getPage(targetPageNum);
-
-        final pageImage = await page.render(
-          width: page.width * 3.0,
-          height: page.height * 3.0,
-          format: PdfPageImageFormat.png,
-        );
-
-        await page.close();
-        await pdfDoc.close();
-
-        if (pageImage != null && pageImage.bytes.isNotEmpty) {
-          final tempDir = await getTemporaryDirectory();
-          final imagePath = '${tempDir.path}/slide_${DateTime.now().millisecondsSinceEpoch}.png';
-          final file = File(imagePath);
-          await file.writeAsBytes(pageImage.bytes);
-
-          final double aspectRatio = page.height / page.width;
-          final double renderWidth = 560.0;
-          final double renderHeight = renderWidth * aspectRatio;
-
-          final imageElement = ImageElement(
-            id: const Uuid().v4(),
-            position: const Offset(120, 80),
-            imageUrl: imagePath,
-            size: Size(renderWidth, renderHeight),
-          );
-
-          provider.addElement(imageElement);
-          provider.closeDocumentOverlay();
-
-          return;
-        }
-      }
-
-      // Full 1:1 Viewport Boundary Capture (Preserves full slide title and content without cropping)
-      final boundary = _previewBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) {
-        throw Exception("Preview area is not ready yet.");
-      }
-
-      ui.Image fullImage = await boundary.toImage(pixelRatio: 3.0);
-      final double W = fullImage.width.toDouble();
-      final double H = fullImage.height.toDouble();
-
-      final srcRect = Rect.fromLTWH(0, 0, W, H);
-      final dstRect = Rect.fromLTWH(0, 0, W, H);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder, dstRect);
-      canvas.drawImageRect(fullImage, srcRect, dstRect, Paint()..filterQuality = ui.FilterQuality.high);
-
-      final picture = recorder.endRecording();
-      final croppedImage = await picture.toImage(W.toInt(), H.toInt());
-      ByteData? byteData = await croppedImage.toByteData(format: ui.ImageByteFormat.png);
-
-      if (byteData != null) {
-        final Uint8List pngBytes = byteData.buffer.asUint8List();
-        final tempDir = await getTemporaryDirectory();
-        final imagePath = '${tempDir.path}/slide_${DateTime.now().millisecondsSinceEpoch}.png';
-        final file = File(imagePath);
-        await file.writeAsBytes(pngBytes);
-
-        final double aspectRatio = H / W;
-        final double renderWidth = 560.0;
-        final double renderHeight = renderWidth * aspectRatio;
-
-        final imageElement = ImageElement(
-          id: const Uuid().v4(),
-          position: const Offset(120, 80),
-          imageUrl: imagePath,
-          size: Size(renderWidth, renderHeight),
-        );
-
-        provider.addElement(imageElement);
-        provider.closeDocumentOverlay();
-
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.green,
-            content: Text('Page $_currentPage added to Whiteboard! You can now draw on it.'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint("Error ide: $e");
-      scaffoldMessenger.showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text('Failed to import slide: $e')));
-    } finally {
-      if (mounted) {
-        setState(() => _isImporting = false);
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -163,8 +35,6 @@ class _DocumentOverlayPanelState extends State<DocumentOverlayPanel> {
     }
 
     final doc = provider.activeOverlayDocument!;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
 
     // Reset minimization & pages on new document
     if (_lastDocId != doc.id) {

@@ -64,6 +64,7 @@ class _AiResultPanelState extends State<AiResultPanel> {
           currentOpts.clear();
           currentAns = '';
         }
+
         currentQ = line.replaceAll(RegExp(r'^\*\*|\*\*$|^#+'), '').trim();
       } else if (RegExp(r'^[A-D][\.\)]', caseSensitive: false).hasMatch(line)) {
         currentOpts.add(line);

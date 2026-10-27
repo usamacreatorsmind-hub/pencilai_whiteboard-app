@@ -842,6 +842,7 @@ class _CompassPainter extends CustomPainter {
       const Radius.circular(8),
     );
 
+
     canvas.drawRRect(
       bgRect,
       Paint()..color = const Color(0xEE0F172A),

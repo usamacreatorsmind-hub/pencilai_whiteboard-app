@@ -18,7 +18,7 @@ import 'canvas/canvas_pointer_manager.dart';
 import 'canvas/whiteboard_painter.dart';
 export 'canvas/whiteboard_painter.dart';
 
-/// Main interactive whiteboard canvas widget handling touch events, drawing tools,
+/// Main interactive whiteboard canvas widget handling touch events, drawing tools
 /// element selection, and overlay layers.
 class WhiteboardCanvas extends StatefulWidget {
   const WhiteboardCanvas({super.key});
@@ -152,6 +152,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   // -------------------------------------------------------------------------
 
   void _onPointerDown(PointerDownEvent event, WhiteboardProvider provider) {
+    _pointerManager.cancelGestureEraserReset();
+    _pointerManager.cancelToolEraserReset();
     _pointerManager.startWatchdog(() => mounted);
     _pointerManager.pruneStalePointers(force: true);
     _pointerManager.lastSeen[event.pointer] = DateTime.now();
@@ -169,11 +171,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
     final pointerId = event.pointer;
     _pointerManager.smoothedDeltas[pointerId] = Offset.zero;
-    _pointerManager.tipOffsets[pointerId] = Offset.zero;
 
     if (provider.currentTool == WhiteboardTool.preview) {
       _pointerManager.panPointerId ??= pointerId;
       return;
+    }
+
+    if (provider.activeSmartPenStroke != null) {
+      provider.clearActiveSmartPenStroke();
     }
 
     if (!_pointerManager.isPalm(event) &&
@@ -183,19 +188,29 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     if (provider.currentTool == WhiteboardTool.eraser) {
-      _pointerManager.eraserPositions[pointerId] = localPos;
-      _pointerManager.lastEraserPositions[pointerId] = localPos;
-      provider.partialErase(localPos, provider.eraserSize, lastPos: localPos);
-      _pointerManager.requestRepaint(mounted);
+      _pointerManager.handleToolEraserDown(
+        pointerId,
+        localPos,
+        provider,
+        context,
+        mounted,
+      );
       return;
     }
 
     if (_pointerManager.isEraserMode(event, context)) {
       if (!_pointerManager.isUsingGestureEraser) {
-        _pointerManager.switchToEraserMode(provider, context, mounted);
+        _pointerManager.switchToEraserMode(
+          localPos,
+          provider,
+          context,
+          mounted,
+        );
       } else {
-        final centroid =
-            _pointerManager.gestureEraseCentroid(localPos, context);
+        final centroid = _pointerManager.gestureEraseCentroid(
+          localPos,
+          context,
+        );
         _pointerManager.handleGestureEraseMove(
           centroid,
           provider,
@@ -270,10 +285,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         strokeWidth: provider.strokeWidth,
         docPage: docPage,
       );
-    } else if (provider.currentTool == WhiteboardTool.eraser) {
-      _pointerManager.eraserPositions[pointerId] = localPos;
-      _pointerManager.lastEraserPositions[pointerId] = localPos;
-      provider.partialErase(localPos, provider.eraserSize, lastPos: localPos);
     }
     _pointerManager.requestRepaint(mounted);
   }
@@ -384,13 +395,29 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       _pointerManager.lastMoveLogTime = DateTime.now();
     }
 
+    if (provider.currentTool == WhiteboardTool.eraser ||
+        _pointerManager.toolEraserPointerIds.contains(pointerId)) {
+      _pointerManager.handleToolEraserMove(
+        pointerId,
+        localPos,
+        provider,
+        context,
+        mounted,
+      );
+      return;
+    }
+
     if (_pointerManager.isEraserMode(event, context)) {
       if (!_pointerManager.isUsingGestureEraser) {
-        _pointerManager.switchToEraserMode(provider, context, mounted);
+        _pointerManager.switchToEraserMode(
+          localPos,
+          provider,
+          context,
+          mounted,
+        );
         return;
       }
-      final centroid =
-          _pointerManager.gestureEraseCentroid(localPos, context);
+      final centroid = _pointerManager.gestureEraseCentroid(localPos, context);
       _pointerManager.handleGestureEraseMove(
         centroid,
         provider,
@@ -424,17 +451,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       return;
     }
 
-    if (provider.currentTool == WhiteboardTool.eraser ||
-        _pointerManager.eraserPositions.containsKey(pointerId)) {
-      final prevPos =
-          _pointerManager.lastEraserPositions[pointerId] ?? localPos;
-      _pointerManager.eraserPositions[pointerId] = localPos;
-      _pointerManager.lastEraserPositions[pointerId] = localPos;
-      provider.partialErase(localPos, provider.eraserSize, lastPos: prevPos);
-      _pointerManager.requestRepaint(mounted);
-      return;
-    }
-
     final active = _pointerManager.activeElements[pointerId];
     if (active == null) return;
 
@@ -462,6 +478,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     if (_pointerManager.isUsingGestureEraser) {
       _pointerManager.flushPendingErase(provider);
+      _pointerManager.scheduleGestureEraserReset();
+    }
+
+    if (provider.currentTool == WhiteboardTool.eraser ||
+        _pointerManager.toolEraserPointerIds.contains(pointerId)) {
+      _pointerManager.handleToolEraserUp(pointerId, provider, mounted);
     }
 
     final bool wasGestureEraser = _pointerManager.isUsingGestureEraser;
@@ -470,8 +492,13 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _pointerManager.forgetPointer(pointerId);
     _forgetNib(pointerId);
 
-    if (!_pointerManager.hasTouchDown()) {
-      _pointerManager.resetGestureEraser();
+    if (!_pointerManager.hasTouchDown() ||
+        _pointerManager.freshTouchPointers().isEmpty) {
+      _pointerManager.scheduleGestureEraserReset();
+      _pointerManager.scheduleToolEraserReset();
+    }
+    if (_pointerManager.pointers.isEmpty) {
+      _pointerManager.resetToolEraser();
     }
 
     if (provider.currentTool == WhiteboardTool.select) {
@@ -494,9 +521,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _pointerManager.isPalm(event);
     final bool dropElement =
         wasGestureEraser ||
-        isQuickPalm ||
         _pointerManager.isUsingGestureEraser ||
-        _pointerManager.isPalm(event);
+        (isQuickPalm &&
+            (element is! StrokeElement || element.points.length <= 2));
     if (element != null && !dropElement) {
       if (element is StrokeElement && element.points.length > 1) {
         element.invalidatePath();
@@ -520,6 +547,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
         provider.addElement(element);
         WhiteboardPainter.appendElementToCache(element, provider.boardVersion);
+
+        if (element.penType == PenType.smartPen && !element.isDotOrTap) {
+          provider.setActiveSmartPenStroke(element);
+        }
       } else if (element is ShapeElement) {
         if ((element.position - element.endPoint).distance > 5) {
           provider.addElement(element);
@@ -552,9 +583,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     final bool isPalmCancel =
         durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
-        (_pointerManager.isPalm(event) ||
-            (hint != null &&
-                (hint['isCanceled'] == true || hint['toolType'] == 5)));
+        (hint != null && (hint['isCanceled'] == true || hint['toolType'] == 5));
 
     _pointerManager.lastCancelInfo =
         'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
@@ -568,10 +597,15 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       _pointerManager.flushPendingErase(provider);
     }
 
+    if (provider.currentTool == WhiteboardTool.eraser ||
+        _pointerManager.toolEraserPointerIds.contains(pointerId)) {
+      _pointerManager.handleToolEraserUp(pointerId, provider, mounted);
+    }
+
     if (isPalmCancel) {
       provider.partialErase(
         localPos,
-        _pointerManager.gestureEraseRadius(),
+        _pointerManager.gestureEraseRadius(provider),
         lastPos: localPos,
       );
     }
@@ -584,8 +618,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       provider.setLassoPath(null);
     }
 
-    if (!_pointerManager.hasTouchDown()) {
-      _pointerManager.resetGestureEraser();
+    if (_pointerManager.isUsingGestureEraser ||
+        !_pointerManager.hasTouchDown() ||
+        _pointerManager.freshTouchPointers().isEmpty) {
+      _pointerManager.scheduleGestureEraserReset();
+      _pointerManager.scheduleToolEraserReset();
+    }
+    if (_pointerManager.pointers.isEmpty) {
+      _pointerManager.resetToolEraser();
     }
     _pointerManager.requestRepaint(mounted);
   }
@@ -729,6 +769,29 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                               width: rawRect.width * img.scale,
                               height: rawRect.height * img.scale,
                             );
+                            final bool isPlain =
+                                img.isTransparent ||
+                                img.imageUrl.contains('smart_obj');
+                            final imageWidget = img.imageUrl.startsWith('http')
+                                ? Image.network(
+                                    img.imageUrl,
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.high,
+                                    errorBuilder: (c, e, s) => const Icon(
+                                      Icons.broken_image,
+                                      size: 50,
+                                    ),
+                                  )
+                                : Image.file(
+                                    File(img.imageUrl),
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.high,
+                                    errorBuilder: (c, e, s) => const Icon(
+                                      Icons.broken_image,
+                                      size: 50,
+                                    ),
+                                  );
+
                             return Positioned(
                               left: visualRect.left,
                               top: visualRect.top,
@@ -736,45 +799,31 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                               height: visualRect.height,
                               child: Transform.rotate(
                                 angle: img.rotation,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(6),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.25,
-                                        ),
-                                        blurRadius: 12,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: img.imageUrl.startsWith('http')
-                                        ? Image.network(
-                                            img.imageUrl,
-                                            fit: BoxFit.contain,
-                                            filterQuality: FilterQuality.high,
-                                            errorBuilder: (c, e, s) =>
-                                                const Icon(
-                                                  Icons.broken_image,
-                                                  size: 50,
-                                                ),
-                                          )
-                                        : Image.file(
-                                            File(img.imageUrl),
-                                            fit: BoxFit.contain,
-                                            filterQuality: FilterQuality.high,
-                                            errorBuilder: (c, e, s) =>
-                                                const Icon(
-                                                  Icons.broken_image,
-                                                  size: 50,
-                                                ),
+                                child: isPlain
+                                    ? imageWidget
+                                    : Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            6,
                                           ),
-                                  ),
-                                ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.25,
+                                              ),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          child: imageWidget,
+                                        ),
+                                      ),
                               ),
                             );
                           }),
@@ -880,10 +929,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                     child: ValueListenableBuilder<int>(
                       valueListenable: _pointerManager.activeLayerPulse,
                       builder: (context, _, _) {
-                        if (_pointerManager.isUsingGestureEraser) {
+                        if (_pointerManager.isEraserCircleVisible) {
                           final center = _pointerManager.gestureCenter;
                           if (center == null) return const SizedBox.shrink();
-                          final r = _pointerManager.gestureEraseRadius();
+                          final r = _pointerManager.gestureEraseRadius(
+                            provider,
+                          );
                           return Stack(
                             clipBehavior: Clip.none,
                             children: [
@@ -902,30 +953,30 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                           );
                         }
 
-                        if (provider.currentTool != WhiteboardTool.eraser ||
-                            _pointerManager.eraserPositions.isEmpty) {
-                          return const SizedBox.shrink();
+                        if (provider.currentTool == WhiteboardTool.eraser &&
+                            _pointerManager.isToolEraserCircleVisible) {
+                          final center = _pointerManager.toolEraserCenter;
+                          if (center == null) return const SizedBox.shrink();
+                          final double radius = provider.eraserSize;
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                left: center.dx + panOffset.dx - radius,
+                                top: center.dy + panOffset.dy - radius,
+                                child: _eraserCircle(
+                                  radius: radius,
+                                  borderWidth: 1.8,
+                                  minIcon: 12,
+                                  maxIcon: 32,
+                                  iconFactor: 0.42,
+                                ),
+                              ),
+                            ],
+                          );
                         }
 
-                        final double radius = provider.eraserSize;
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: _pointerManager.eraserPositions.values.map((
-                            pos,
-                          ) {
-                            return Positioned(
-                              left: pos.dx + panOffset.dx - radius,
-                              top: pos.dy + panOffset.dy - radius,
-                              child: _eraserCircle(
-                                radius: radius,
-                                borderWidth: 1.8,
-                                minIcon: 12,
-                                maxIcon: 32,
-                                iconFactor: 0.42,
-                              ),
-                            );
-                          }).toList(),
-                        );
+                        return const SizedBox.shrink();
                       },
                     ),
                   ),
@@ -1038,10 +1089,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                               CanvasPointerManager.kPalmRadiusMajorMin
                           ? "Palm"
                           : (isB ? "Backhand" : "Size"))
-                    : (freshPointers.length >=
-                              CanvasPointerManager.kPalmClusterMinPoints
-                          ? "Cluster"
-                          : "Finger");
+                    : "Finger";
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Text(

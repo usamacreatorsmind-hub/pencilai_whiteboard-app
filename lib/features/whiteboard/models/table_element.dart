@@ -21,6 +21,7 @@ class TableElement extends BoardElement {
     super.docPage,
   });
 
+
   @override
   Map<String, dynamic> toJson() => {
     'type': 'table',

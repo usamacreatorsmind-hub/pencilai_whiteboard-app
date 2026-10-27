@@ -14,6 +14,7 @@ enum CanvasGridType {
   isometric,
 }
 
+
 extension CanvasGridTypeExtension on CanvasGridType {
   String get displayName {
     switch (this) {
@@ -56,13 +57,16 @@ class CanvasGridPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Draw solid canvas background
-    final bgPaint = Paint()..color = backgroundColor;
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+    // 1. Draw solid canvas background (skip if transparent / custom image background)
+    if (backgroundColor != Colors.transparent) {
+      final bgPaint = Paint()..color = backgroundColor;
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+    }
 
     if (gridType == CanvasGridType.none) return;
 
-    final isDark = backgroundColor.computeLuminance() < 0.5;
+    final isDark = backgroundColor != Colors.transparent &&
+        backgroundColor.computeLuminance() < 0.5;
     final baseColor = isDark ? Colors.white : const Color(0xFF1E293B);
 
     switch (gridType) {

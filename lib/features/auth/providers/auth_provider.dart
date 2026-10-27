@@ -16,8 +16,6 @@ class AuthProvider extends ChangeNotifier {
   User? _user;
   bool _isLoading = false;
   String? _errorMessage;
-  String? _verificationId;
-  int? _resendToken;
 
   OnboardingStep _currentStep = OnboardingStep.phoneInput;
   String? _teacherName;
@@ -242,7 +240,6 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void resetOnboarding() {
-    _verificationId = null;
     _errorMessage = null;
     _isLoading = false;
     _isEmailLogin = false;
@@ -362,6 +359,7 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
   }
+
 
   Future<bool> sendOtp(String phoneInput) async {
     _isLoading = true;
@@ -569,7 +567,6 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     await _auth.signOut();
     _user = null;
-    _verificationId = null;
     _teacherName = null;
     _phoneNumber = null;
     _activeClassroomName = null;

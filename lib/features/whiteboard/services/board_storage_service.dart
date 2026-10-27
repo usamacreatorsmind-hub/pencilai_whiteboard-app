@@ -12,7 +12,6 @@ import 'dart:io';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:file_picker/file_picker.dart';
-
 import '../models/board_page.dart';
 import '../models/board_element.dart';
 import '../models/stroke_element.dart';
@@ -382,6 +381,7 @@ class BoardStorageService {
           }
         }
       }
+
     } catch (e) {
       debugPrint('Error compiling multi-page PDF: $e');
       rethrow;

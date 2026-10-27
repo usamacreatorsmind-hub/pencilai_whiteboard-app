@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'board_element.dart';
 
-enum PenType { pen, fountainPen, brush, marker }
+enum PenType { pen, fountainPen, brush, marker, smartPen }
 
 class StrokeElement extends BoardElement {
   final List<Offset> points;
@@ -23,7 +23,11 @@ class StrokeElement extends BoardElement {
     super.docPage,
   });
 
-  void updateStyling({Color? newColor, double? newStrokeWidth, PenType? newPenType}) {
+  void updateStyling({
+    Color? newColor,
+    double? newStrokeWidth,
+    PenType? newPenType,
+  }) {
     if (newColor != null) color = newColor;
     if (newStrokeWidth != null) strokeWidth = newStrokeWidth;
     if (newPenType != null) penType = newPenType;
@@ -100,7 +104,9 @@ class StrokeElement extends BoardElement {
       for (int pass = 0; pass < 2; pass++) {
         final tempWidths = List<double>.from(_cachedWidths!);
         for (var i = 1; i < n - 1; i++) {
-          _cachedWidths![i] = (tempWidths[i - 1] + tempWidths[i] * 2.0 + tempWidths[i + 1]) / 4.0;
+          _cachedWidths![i] =
+              (tempWidths[i - 1] + tempWidths[i] * 2.0 + tempWidths[i + 1]) /
+              4.0;
         }
       }
     }
@@ -146,7 +152,10 @@ class StrokeElement extends BoardElement {
     _cachedPath = Path();
     if (points.length >= 2) {
       _cachedPath!.moveTo(points[0].dx, points[0].dy);
-      final mid0 = Offset((points[0].dx + points[1].dx) / 2, (points[0].dy + points[1].dy) / 2);
+      final mid0 = Offset(
+        (points[0].dx + points[1].dx) / 2,
+        (points[0].dy + points[1].dy) / 2,
+      );
       _cachedPath!.lineTo(mid0.dx, mid0.dy);
 
       for (var i = 1; i < points.length - 1; i++) {
@@ -177,7 +186,10 @@ class StrokeElement extends BoardElement {
     if (_cachedPath == null) {
       _cachedPath = Path()..moveTo(points[0].dx, points[0].dy);
       if (points.length == 2) {
-        final mid = Offset((points[0].dx + points[1].dx) / 2, (points[0].dy + points[1].dy) / 2);
+        final mid = Offset(
+          (points[0].dx + points[1].dx) / 2,
+          (points[0].dy + points[1].dy) / 2,
+        );
         _cachedPath!.lineTo(mid.dx, mid.dy);
       }
     } else if (points.length > 2) {
@@ -190,9 +202,23 @@ class StrokeElement extends BoardElement {
     return true;
   }
 
-  @override
-  void invalidateBounds() {
-    super.invalidateBounds();
+  /// Calculates the cumulative path length of the stroke in canvas units
+  double get totalPathLength {
+    if (points.length < 2) return 0.0;
+    double dist = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      dist += (points[i + 1] - points[i]).distance;
+    }
+    return dist;
+  }
+
+  /// Determines whether this stroke is merely a dot, period, or accidental tap
+  bool get isDotOrTap {
+    if (points.length <= 4) return true;
+    final b = getRawBounds();
+    if (b.width < 25.0 && b.height < 25.0) return true;
+    if (totalPathLength < 40.0) return true;
+    return false;
   }
 
   @override
@@ -212,7 +238,7 @@ class StrokeElement extends BoardElement {
     'scale': scale,
     'docPage': docPage,
     'points': points.map((p) => {'dx': p.dx, 'dy': p.dy}).toList(),
-    'color': color.value,
+    'color': color.toARGB32(),
     'strokeWidth': strokeWidth,
     'penType': penType.name,
   };
@@ -224,10 +250,15 @@ class StrokeElement extends BoardElement {
       rotation: json['rotation']?.toDouble() ?? 0.0,
       scale: json['scale']?.toDouble() ?? 1.0,
       docPage: json['docPage'],
-      points: (json['points'] as List).map((p) => Offset(p['dx'], p['dy'])).toList(),
+      points: (json['points'] as List)
+          .map((p) => Offset(p['dx'], p['dy']))
+          .toList(),
       color: Color(json['color']),
       strokeWidth: json['strokeWidth'].toDouble(),
-      penType: PenType.values.firstWhere((e) => e.name == json['penType'], orElse: () => PenType.pen),
+      penType: PenType.values.firstWhere(
+        (e) => e.name == json['penType'],
+        orElse: () => PenType.pen,
+      ),
     );
   }
 

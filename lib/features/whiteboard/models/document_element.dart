@@ -19,6 +19,7 @@ class DocumentElement extends BoardElement {
     super.docPage,
   });
 
+
   @override
   Map<String, dynamic> toJson() => {
     'type': 'document',

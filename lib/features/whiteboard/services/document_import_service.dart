@@ -8,6 +8,7 @@ import '../models/board_page.dart';
 import '../models/image_element.dart';
 import 'ppt_conversion_service.dart';
 
+
 typedef ImportProgressCallback = void Function(int current, int total, String statusMessage);
 
 class DocumentImportService {
@@ -84,6 +85,7 @@ class DocumentImportService {
               position: Offset.zero,
               imageUrl: imagePath,
               size: Size(screenWidth, screenHeight),
+              isDocumentSlide: true,
             );
 
             importedPages[pageNum - 1] = BoardPage(id: const Uuid().v4(), elements: [imageElement]);

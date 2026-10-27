@@ -11,6 +11,7 @@ import 'package:xml/xml.dart';
 import '../models/board_page.dart';
 import '../models/image_element.dart';
 
+
 typedef ImportProgressCallback = void Function(int current, int total, String statusMessage);
 
 class OfflinePptParserService {
@@ -262,7 +263,7 @@ class OfflinePptParserService {
           }
         });
       } else {
-        await headlessWebView?.dispose();
+        await headlessWebView.dispose();
       }
     } catch (e) {
       debugPrint("Error in HeadlessInAppWebView PPTX conversion: $e");
@@ -307,6 +308,7 @@ class OfflinePptParserService {
         position: pos,
         size: Size(w, h),
         imageUrl: imagePaths[i],
+        isDocumentSlide: true,
       );
 
       pages.add(BoardPage(

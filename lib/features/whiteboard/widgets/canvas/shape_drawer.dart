@@ -4,6 +4,7 @@ import '../../models/shape_element.dart';
 
 /// Helper class for rendering 2D and 3D geometric shapes and shape dimensions on a [Canvas].
 class ShapeDrawer {
+
   ShapeDrawer._();
 
   /// Main entry point to draw a [ShapeElement].

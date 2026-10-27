@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../widgets/whiteboard_canvas.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/object_handles.dart';
+import '../widgets/smart_pen_suggestion_widget.dart';
 import '../widgets/slide_overview_sidebar.dart';
 import '../widgets/ai_floating_menu_widget.dart';
 import '../widgets/ai_result_panel.dart';
@@ -458,15 +461,59 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     final provider = Provider.of<WhiteboardProvider>(context, listen: false);
     try {
       final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['jpg', 'png', 'jpeg', 'pdf', 'ppt', 'pptx'],
+        type: FileType.any,
       );
-      if (result != null && result.files.single.path != null) {
-        final filePath = result.files.single.path!;
-        final lower = filePath.toLowerCase();
-        if (lower.endsWith('jpg') ||
-            lower.endsWith('png') ||
-            lower.endsWith('jpeg')) {
+      if (result != null && result.files.isNotEmpty) {
+        final picked = result.files.single;
+        final fileName = picked.name;
+        final ext = (picked.extension ??
+                (fileName.contains('.') ? fileName.split('.').last : ''))
+            .toLowerCase();
+
+        const allowedExts = [
+          'jpg',
+          'png',
+          'jpeg',
+          'pdf',
+          'ppt',
+          'pptx',
+          'doc',
+          'docx',
+        ];
+
+
+        if (!allowedExts.contains(ext)) {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFFD97706),
+              content: Text('Unsupported format: .$ext. Please select an image or document.'),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+          return;
+        }
+
+        String? filePath = picked.path;
+        if (filePath == null && picked.bytes != null) {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File(
+            '${tempDir.path}/opened_${DateTime.now().millisecondsSinceEpoch}_$fileName',
+          );
+          await tempFile.writeAsBytes(picked.bytes!);
+          filePath = tempFile.path;
+        }
+
+        if (filePath == null || !File(filePath).existsSync()) {
+          scaffoldMessenger.showSnackBar(
+            const SnackBar(
+              backgroundColor: Colors.redAccent,
+              content: Text('Could not access selected file.'),
+            ),
+          );
+          return;
+        }
+
+        if (ext == 'jpg' || ext == 'png' || ext == 'jpeg') {
           provider.addElement(
             ImageElement(
               id: const Uuid().v4(),
@@ -476,7 +523,6 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
             ),
           );
         } else {
-          final fileName = result.files.single.name;
           provider.addElement(
             DocumentElement(
               id: const Uuid().v4(),
@@ -696,19 +742,43 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                 clipBehavior: Clip.none,
                 children: [
                   Consumer<WhiteboardProvider>(
-                    builder: (context, provider, _) => RepaintBoundary(
-                      key: _canvasKey,
-                      child: CustomPaint(
-                        painter: CanvasGridPainter(
-                          backgroundColor: provider.canvasBackgroundColor,
-                          gridType: provider.canvasGridType,
-                          panOffset: provider.canvasPanOffset,
+                    builder: (context, provider, _) {
+                      final hasCustomBg =
+                          provider.canvasBackgroundImagePath != null &&
+                          File(provider.canvasBackgroundImagePath!).existsSync();
+
+                      return RepaintBoundary(
+                        key: _canvasKey,
+                        child: Container(
+                          decoration: hasCustomBg
+                              ? BoxDecoration(
+                                  color: provider.canvasBackgroundColor,
+                                  image: DecorationImage(
+                                    image: FileImage(
+                                      File(provider.canvasBackgroundImagePath!),
+                                    ),
+                                    fit: BoxFit.cover,
+                                  ),
+                                )
+                              : BoxDecoration(
+                                  color: provider.canvasBackgroundColor,
+                                ),
+                          child: CustomPaint(
+                            painter: CanvasGridPainter(
+                              backgroundColor: hasCustomBg
+                                  ? Colors.transparent
+                                  : provider.canvasBackgroundColor,
+                              gridType: provider.canvasGridType,
+                              panOffset: provider.canvasPanOffset,
+                            ),
+                            child: const WhiteboardCanvas(),
+                          ),
                         ),
-                        child: const WhiteboardCanvas(),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                   const ObjectHandles(),
+                  const SmartPenSuggestionWidget(),
                   const AiFloatingMenuWidget(),
                   const AiResultPanel(),
                   if (_isSidebarOpen) ...[

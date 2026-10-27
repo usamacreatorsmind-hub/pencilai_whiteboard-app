@@ -23,6 +23,7 @@ class QrNotesDialog extends StatefulWidget {
     );
   }
 
+
   @override
   State<QrNotesDialog> createState() => _QrNotesDialogState();
 }

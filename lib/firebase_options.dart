@@ -46,3 +46,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'pencilaiboardapp.firebasestorage.app',
   );
 }
+

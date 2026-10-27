@@ -64,6 +64,7 @@ class MindMapNode {
     'strokeColors': strokeColors.map((c) => c.toARGB32()).toList(),
   };
 
+
   factory MindMapNode.fromJson(Map<String, dynamic> json) {
     return MindMapNode(
       id: json['id'],

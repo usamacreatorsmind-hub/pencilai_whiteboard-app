@@ -25,6 +25,7 @@ enum ShapeType {
   sphere3d,
 }
 
+
 class ShapeElement extends BoardElement {
   final ShapeType shapeType;
   Offset endPoint;

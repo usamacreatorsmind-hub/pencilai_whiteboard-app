@@ -19,7 +19,6 @@ class SlideOverviewSidebar extends StatelessWidget {
     final currentIndex = provider.currentPageIndex;
     final bool showDeleteButton = pages.length > 1;
     final double sidebarWidth = showDeleteButton ? 260.0 : 205.0;
-
     return Container(
       margin: const EdgeInsets.only(right: 8, bottom: 4),
       width: sidebarWidth,

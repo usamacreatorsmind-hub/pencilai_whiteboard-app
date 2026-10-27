@@ -26,6 +26,7 @@ class ShareNotesDialog extends StatefulWidget {
   State<ShareNotesDialog> createState() => _ShareNotesDialogState();
 }
 
+
 class _ShareNotesDialogState extends State<ShareNotesDialog> {
   final BoardStorageService _storageService = BoardStorageService();
 

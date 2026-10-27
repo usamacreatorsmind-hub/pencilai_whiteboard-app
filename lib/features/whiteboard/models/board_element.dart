@@ -138,6 +138,7 @@ abstract class BoardElement {
       bounds = Rect.fromLTWH(position.dx, position.dy, 100, 100);
     }
 
+
     _cachedBounds = bounds;
     return bounds;
   }

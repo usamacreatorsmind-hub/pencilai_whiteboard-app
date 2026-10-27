@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
+
 class AiService {
   static const String apiKey = String.fromEnvironment(
     'GEMINI_API_KEY',
@@ -20,7 +21,9 @@ class AiService {
       return '⚠️ Gemini API Key is missing. Please run the app with --dart-define-from-file=env.json.';
     }
     try {
-      final uri = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$_modelName:generateContent');
+      final uri = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models/$_modelName:generateContent',
+      );
 
       List<Map<String, dynamic>> parts = [
         {'text': prompt},
@@ -84,7 +87,10 @@ class AiService {
     }
   }
 
-  Future<String> generateQuickQuiz(String contentText, {List<String>? imagePaths}) => _generate(
+  Future<String> generateQuickQuiz(
+    String contentText, {
+    List<String>? imagePaths,
+  }) => _generate(
     'Act as an expert educator. Based on the following teaching content/slide image, '
         'generate a maximum of 10 multiple-choice questions (MCQs) with 4 options '
         'each (A, B, C, D) and clearly indicate the correct answer.\n\n'
@@ -93,7 +99,10 @@ class AiService {
     imagePaths: imagePaths,
   );
 
-  Future<String> generateHomework(String contentText, {List<String>? imagePaths}) => _generate(
+  Future<String> generateHomework(
+    String contentText, {
+    List<String>? imagePaths,
+  }) => _generate(
     'Based on the following lesson content/slide image, create engaging homework '
         'questions or short assignments for students to test their '
         'understanding.\n\nContent:\n$contentText',
@@ -101,7 +110,10 @@ class AiService {
     imagePaths: imagePaths,
   );
 
-  Future<String> generateSummary(String contentText, {List<String>? imagePaths}) => _generate(
+  Future<String> generateSummary(
+    String contentText, {
+    List<String>? imagePaths,
+  }) => _generate(
     'Act as an expert educator. Provide a comprehensive, in-depth professional summary '
         '(at least 100 to 150 words) of the topic, core concepts, and detailed teaching talking points '
         'based on the following teaching content/slide image. Ensure the explanation is thorough, clear, '
@@ -114,11 +126,18 @@ class AiService {
   Future<String> recognizeHandwriting({
     String? imagePath,
     Uint8List? imageBytes,
+    String? language,
   }) async {
+    final langInstruction =
+        (language != null &&
+            language.isNotEmpty &&
+            !language.toLowerCase().contains('follow system'))
+        ? 'The handwriting is written in $language. Transcribe accurately in $language characters/script. '
+        : '';
     final result = await _generate(
-      'Transcribe the handwritten text or notes in this whiteboard image. '
-      'Extract ONLY the exact handwritten text, word, or sentence written in the image. '
-      'Return strictly the plain text string with zero extra explanation, markdown, or quotation marks.',
+      'Transcribe the handwritten text or notes in this whiteboard image. $langInstruction'
+          'Extract ONLY the exact handwritten text, word, or sentence written in the image. '
+          'Return strictly the plain text string with zero extra explanation, markdown, or quotation marks.',
       'Handwriting OCR',
       imagePaths: imagePath != null ? [imagePath] : null,
       directBytes: imageBytes != null ? [imageBytes] : null,
@@ -126,7 +145,8 @@ class AiService {
     return result.trim();
   }
 
-  Future<String> translateWithAi(String prompt) => _generate(prompt, 'Translation');
+  Future<String> translateWithAi(String prompt) =>
+      _generate(prompt, 'Translation');
 
   Future<String> generateMindMap(String prompt) => _generate(prompt, 'MindMap');
 }

@@ -16,6 +16,7 @@ import 'translation_dialog.dart';
 class ObjectHandles extends StatefulWidget {
   const ObjectHandles({super.key});
 
+
   @override
   State<ObjectHandles> createState() => _ObjectHandlesState();
 }
@@ -56,10 +57,45 @@ class _ObjectHandlesState extends State<ObjectHandles> {
 
   Widget _buildDivider() {
     return Container(
-      height: 18,
+      height: 24,
       width: 1,
-      color: Colors.white.withValues(alpha: 0.2),
+      color: Colors.white.withValues(alpha: 0.15),
       margin: const EdgeInsets.symmetric(horizontal: 2),
+    );
+  }
+
+  Widget _buildToolbarActionItem({
+    required Widget icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              icon,
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -84,10 +120,7 @@ class _ObjectHandlesState extends State<ObjectHandles> {
     }
   }
 
-  Future<void> _directSearchInChrome(
-    BuildContext context,
-    WhiteboardProvider provider,
-  ) async {
+  Future<void> _directSearchInChrome(WhiteboardProvider provider) async {
     if (_isSearching) return;
     setState(() => _isSearching = true);
 
@@ -381,293 +414,260 @@ class _ObjectHandlesState extends State<ObjectHandles> {
 
         // Bottom Action Tile (Search, Color Picker, Delete, AI Assist)
         Positioned(
-          left:
-              boxCenterX -
-              (_showColorPalette
-                  ? 160
-                  : (_isPeriodicTableSelected(provider) ? 45 : 90)),
+          left: boxCenterX,
           top: boxBottom + 12,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.15),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          child: FractionalTranslation(
+            translation: const Offset(-0.5, 0),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  width: 1.2,
                 ),
-              ],
-            ),
-            child: _showColorPalette
-                ? Container(
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final color in [
-                            Colors.black,
-                            Colors.white,
-                            Colors.redAccent,
-                            const Color(0xFFEC4899), // Pink
-                            const Color(0xFF8B5CF6), // Purple
-                            const Color(0xFF3B82F6), // Blue
-                            const Color(0xFF38BDF8), // Sky Cyan
-                            const Color(0xFF10B981), // Emerald Green
-                            const Color(0xFFF59E0B), // Amber / Yellow
-                            const Color(0xFFF97316), // Orange
-                          ])
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 3,
-                              ),
-                              child: GestureDetector(
-                                onTap: () {
-                                  provider.updateSelectedElementsColor(color);
-                                  setState(() => _showColorPalette = false);
-                                },
-                                child: Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: color == Colors.white
-                                          ? Colors.black26
-                                          : Colors.white,
-                                      width: 2,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.2,
-                                        ),
-                                        blurRadius: 4,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: _showColorPalette
+                  ? Container(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final color in [
+                              Colors.black,
+                              Colors.white,
+                              Colors.redAccent,
+                              const Color(0xFFEC4899), // Pink
+                              const Color(0xFF8B5CF6), // Purple
+                              const Color(0xFF3B82F6), // Blue
+                              const Color(0xFF38BDF8), // Sky Cyan
+                              const Color(0xFF10B981), // Emerald Green
+                              const Color(0xFFF59E0B), // Amber / Yellow
+                              const Color(0xFFF97316), // Orange
+                            ])
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    provider.updateSelectedElementsColor(color);
+                                    setState(() => _showColorPalette = false);
+                                  },
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      color: color,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: color == Colors.white
+                                            ? Colors.black26
+                                            : Colors.white,
+                                        width: 2,
                                       ),
-                                    ],
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.2,
+                                          ),
+                                          blurRadius: 4,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          const SizedBox(width: 4),
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _showColorPalette = false),
-                            child: Container(
-                              padding: const EdgeInsets.all(4.0),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
+                            const SizedBox(width: 4),
+                            GestureDetector(
+                              onTap: () =>
+                                  setState(() => _showColorPalette = false),
+                              child: Container(
+                                padding: const EdgeInsets.all(4.0),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  LucideIcons.x,
+                                  color: Colors.white70,
+                                  size: 16,
+                                ),
                               ),
-                              child: const Icon(
-                                LucideIcons.x,
-                                color: Colors.white70,
-                                size: 16,
-                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : _isMindMapSelected(provider)
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Delete Button
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => provider.removeSelectedElements(),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.trash2,
-                              color: Colors.redAccent,
-                              size: 20,
-                            ),
-                          ),
+                          ],
                         ),
                       ),
-                    ],
-                  )
-                : _isPeriodicTableSelected(provider)
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 1. Delete Button
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => provider.removeSelectedElements(),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.trash2,
-                              color: Colors.redAccent,
-                              size: 20,
-                            ),
+                    )
+                  : _isMindMapSelected(provider)
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.trash2,
+                            color: Colors.redAccent,
+                            size: 19,
                           ),
+                          label: 'Delete',
+                          color: Colors.redAccent,
+                          onTap: () => provider.removeSelectedElements(),
                         ),
-                      ),
-                      _buildDivider(),
-                      // 2. AI Assist Button
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                        _buildDivider(),
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.sparkles,
+                            color: Color(0xFF8B5CF6),
+                            size: 19,
+                          ),
+                          label: 'AI Assist',
+                          color: const Color(0xFF8B5CF6),
                           onTap: () => _showAiSelectionMenu(context, provider),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.sparkles,
-                              color: Color(0xFF8B5CF6),
-                              size: 20,
-                            ),
-                          ),
                         ),
-                      ),
-                    ],
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 1. Smart Writing Button (Handwriting-to-Text)
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                      ],
+                    )
+                  : _isPeriodicTableSelected(provider)
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.trash2,
+                            color: Colors.redAccent,
+                            size: 19,
+                          ),
+                          label: 'Delete',
+                          color: Colors.redAccent,
+                          onTap: () => provider.removeSelectedElements(),
+                        ),
+                        _buildDivider(),
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.sparkles,
+                            color: Color(0xFF8B5CF6),
+                            size: 19,
+                          ),
+                          label: 'AI Assist',
+                          color: const Color(0xFF8B5CF6),
+                          onTap: () => _showAiSelectionMenu(context, provider),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 1. Smart Writing Button (Handwriting-to-Text in English)
+                        _buildToolbarActionItem(
+                          icon: _isConvertingSmartWriting
+                              ? const SizedBox(
+                                  width: 19,
+                                  height: 19,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF10B981),
+                                  ),
+                                )
+                              : const Icon(
+                                  LucideIcons.wand2,
+                                  color: Color(0xFF10B981),
+                                  size: 19,
+                                ),
+                          label: 'SmartWrite',
+                          color: const Color(0xFF10B981),
                           onTap: _isConvertingSmartWriting
                               ? null
                               : () => _triggerSmartWriting(context, provider),
-                          borderRadius: BorderRadius.circular(14),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: _isConvertingSmartWriting
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFF10B981),
-                                    ),
-                                  )
-                                : const Icon(
-                                    LucideIcons.wand2,
-                                    color: Color(0xFF10B981),
-                                    size: 20,
-                                  ),
-                          ),
                         ),
-                      ),
-                      _buildDivider(),
-                      // 2. Search Button (Direct AI Handwriting OCR Search in Chrome)
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                        _buildDivider(),
+
+                        // 2. Search Button (Direct AI Handwriting OCR Search in Chrome)
+                        _buildToolbarActionItem(
+                          icon: _isSearching
+                              ? const SizedBox(
+                                  width: 19,
+                                  height: 19,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF38BDF8),
+                                  ),
+                                )
+                              : const Icon(
+                                  LucideIcons.search,
+                                  color: Color(0xFF38BDF8),
+                                  size: 19,
+                                ),
+                          label: 'Search',
+                          color: const Color(0xFF38BDF8),
                           onTap: _isSearching
                               ? null
-                              : () => _directSearchInChrome(context, provider),
-                          borderRadius: BorderRadius.circular(14),
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: _isSearching
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFF38BDF8),
-                                    ),
-                                  )
-                                : const Icon(
-                                    LucideIcons.search,
-                                    color: Color(0xFF38BDF8),
-                                    size: 20,
-                                  ),
-                          ),
+                              : () => _directSearchInChrome(provider),
                         ),
-                      ),
-                      _buildDivider(),
-                      // 3. Translate Button (Multi-Language AI & On-Device Translation)
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                        _buildDivider(),
+
+                        // 3. Translate Button (Multi-Language AI & On-Device Translation, no count badge)
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.languages,
+                            color: Color(0xFF2DD4BF),
+                            size: 19,
+                          ),
+                          label: 'Translate',
+                          color: const Color(0xFF2DD4BF),
                           onTap: () =>
                               TranslationDialog.show(context, provider),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.languages,
-                              color: Color(0xFF2DD4BF),
-                              size: 20,
-                            ),
-                          ),
                         ),
-                      ),
-                      _buildDivider(),
-                      // 4. Change Color Button (Toggles 10-color palette)
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                        _buildDivider(),
+
+                        // 4. Change Color Button (Toggles color palette)
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.palette,
+                            color: Color(0xFFF59E0B),
+                            size: 19,
+                          ),
+                          label: 'Color',
+                          color: const Color(0xFFF59E0B),
                           onTap: () => setState(() => _showColorPalette = true),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.palette,
-                              color: Color(0xFFF59E0B),
-                              size: 20,
-                            ),
-                          ),
                         ),
-                      ),
-                      _buildDivider(),
-                      // 3. Delete Button
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                        _buildDivider(),
+
+                        // 5. Delete Button
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.trash2,
+                            color: Colors.redAccent,
+                            size: 19,
+                          ),
+                          label: 'Delete',
+                          color: Colors.redAccent,
                           onTap: () => provider.removeSelectedElements(),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.trash2,
-                              color: Colors.redAccent,
-                              size: 20,
-                            ),
-                          ),
                         ),
-                      ),
-                      _buildDivider(),
-                      // 4. AI Assist Button
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                        _buildDivider(),
+
+                        // 6. AI Assist Button
+                        _buildToolbarActionItem(
+                          icon: const Icon(
+                            LucideIcons.sparkles,
+                            color: Color(0xFF8B5CF6),
+                            size: 19,
+                          ),
+                          label: 'AI Assist',
+                          color: const Color(0xFF8B5CF6),
                           onTap: () => _showAiSelectionMenu(context, provider),
-                          borderRadius: BorderRadius.circular(14),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: Icon(
-                              LucideIcons.sparkles,
-                              color: Color(0xFF8B5CF6),
-                              size: 20,
-                            ),
-                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+            ),
           ),
         ),
 

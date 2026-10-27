@@ -205,6 +205,7 @@ class WhiteboardPainter extends CustomPainter {
         // Not selected - render based on penType with high fidelity
         switch (element.penType) {
           case PenType.pen:
+          case PenType.smartPen:
             _strokePaint
               ..maskFilter = null
               ..strokeCap = StrokeCap.round
@@ -422,6 +423,7 @@ class WhiteboardPainter extends CustomPainter {
           Paint()..color = tbl.color.withValues(alpha: 0.08),
         );
       }
+
 
       final gridPaint = Paint()
         ..color = tbl.color

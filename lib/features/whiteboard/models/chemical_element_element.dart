@@ -13,6 +13,7 @@ class ChemicalElementElement extends BoardElement {
   final String state;
   Size size;
 
+
   ChemicalElementElement({
     required super.id,
     required super.position,

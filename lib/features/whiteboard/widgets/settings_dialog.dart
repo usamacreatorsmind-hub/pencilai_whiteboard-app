@@ -1,27 +1,28 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import '../services/translation_service.dart';
 import '../state/whiteboard_provider.dart';
 import 'canvas/canvas_grid_painter.dart';
 
-enum SettingsTab { main, background }
+enum SettingsTab { main, background, handwritingLanguage, translationLanguage }
 
 class SettingsDialog extends StatefulWidget {
   final SettingsTab initialTab;
 
-  const SettingsDialog({super.key, this.initialTab = SettingsTab.background});
+  const SettingsDialog({super.key, this.initialTab = SettingsTab.main});
 
-  static Future<void> show(
-    BuildContext context, {
-    SettingsTab initialTab = SettingsTab.background,
-  }) {
+  static Future<void> show(BuildContext context, {SettingsTab initialTab = SettingsTab.main}) {
     return showDialog<void>(
       context: context,
       barrierColor: Colors.black54,
       builder: (_) => SettingsDialog(initialTab: initialTab),
     );
   }
+
 
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
@@ -30,22 +31,22 @@ class SettingsDialog extends StatefulWidget {
 class _SettingsDialogState extends State<SettingsDialog> {
   late SettingsTab _currentTab;
 
-  // Preset Colors matching the reference design
-  static const List<({Color color, String name})> _lightPresets = [
-    (color: Color(0xFFFFFFFF), name: 'Cloud White'),
-    (color: Color(0xFFFDE8D7), name: 'Warm Peach'),
-    (color: Color(0xFFE2F0D9), name: 'Soft Mint'),
-    (color: Color(0xFFD0E8F2), name: 'Quiet blue'),
-    (color: Color(0xFFE1D9F0), name: 'Soft Lavender'),
-    (color: Color(0xFFFADCDD), name: 'Soft Rose'),
-  ];
+  static const List<Color> themeBackgroundColors = [
+    // Row 1
+    Color(0xFFE5E8EC), Color(0xFFD2E4F6), Color(0xFFC4DFD6),
+    Color(0xFF73777B), Color(0xFF2F3133), Color(0xFF121314),
 
-  static const List<({Color color, String name})> _darkPresets = [
-    (color: Color(0xFF1E1E1E), name: 'Pitch Black'),
-    (color: Color(0xFF36322E), name: 'Dark Charcoal'),
-    (color: Color(0xFF21352A), name: 'Forest Green'),
-    (color: Color(0xFF1D3557), name: 'Quiet blue'),
-    (color: Color(0xFF2D2545), name: 'Midnight Violet'),
+    // Row 2
+    Color(0xFF5CA3DF), Color(0xFF3DAE97), Color(0xFF7BBF37),
+    Color(0xFFE0A96D), Color(0xFFC87B88), Color(0xFF5D62B1),
+
+    // Row 3
+    Color(0xFF0060CA), Color(0xFF007D49), Color(0xFF329202), // Selected ✓
+    Color(0xFFD87D0E), Color(0xFFBA2D2D), Color(0xFF1C1582),
+
+    // Row 4
+    Color(0xFF0C0E12), Color(0xFF0F1410), Color(0xFF1B2A10),
+    Color(0xFF3B2818), Color(0xFF2B1218), Color(0xFF111226),
   ];
 
   // Grid options matching reference design (8 in row 1, 2 in row 2)
@@ -60,13 +61,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     CanvasGridType.crossGrid,
   ];
 
-  static const List<CanvasGridType> _gridRow2 = [
-    CanvasGridType.columns,
-    CanvasGridType.isometric,
-  ];
+  static const List<CanvasGridType> _gridRow2 = [CanvasGridType.columns, CanvasGridType.isometric];
 
-  // Compact dimensions
-  static const double _kDialogMaxWidth = 350.0;
+  // Dialog dimensions
+  static const double _kDialogMaxWidth = 480.0;
   static const double _kColorChipSize = 28.0;
   static const double _kGridTileSize = 28.0;
 
@@ -76,10 +74,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _currentTab = widget.initialTab;
   }
 
-  void _openCustomColorPicker(
-    BuildContext context,
-    WhiteboardProvider provider,
-  ) {
+  void _openCustomColorPicker(BuildContext context, WhiteboardProvider provider) {
     Color pickerColor = provider.canvasBackgroundColor;
 
     showDialog(
@@ -89,11 +84,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Choose Custom Background Color',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
         ),
         content: SingleChildScrollView(
           child: ColorPicker(
@@ -112,10 +103,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text(
               'Done',
-              style: TextStyle(
-                color: Color(0xFF38BDF8),
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -126,9 +114,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WhiteboardProvider>();
-    final double dialogWidth = MediaQuery.sizeOf(
-      context,
-    ).width.clamp(260.0, _kDialogMaxWidth);
+    final double dialogWidth = MediaQuery.sizeOf(context).width.clamp(320.0, _kDialogMaxWidth);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -136,36 +122,36 @@ class _SettingsDialogState extends State<SettingsDialog> {
       child: Center(
         child: Container(
           width: dialogWidth,
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.86),
           decoration: BoxDecoration(
-            color: const Color(0xFFE5E7EB), // Soft light grey frame
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.22),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-            ],
+            color: const Color(0xFFECEEF2), // Soft light grey frame matching photo
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.24), blurRadius: 24, offset: const Offset(0, 8))],
           ),
-          padding: const EdgeInsets.all(10),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: _currentTab == SettingsTab.background
-                ? _buildBackgroundPanel(context, provider)
-                : _buildMainSettingsPanel(context, provider),
-          ),
+          padding: const EdgeInsets.all(14),
+          child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: _buildCurrentPanel(context, provider)),
         ),
       ),
     );
   }
 
+  Widget _buildCurrentPanel(BuildContext context, WhiteboardProvider provider) {
+    switch (_currentTab) {
+      case SettingsTab.main:
+        return _buildMainSettingsPanel(context, provider);
+      case SettingsTab.background:
+        return _buildBackgroundPanel(context, provider);
+      case SettingsTab.handwritingLanguage:
+        return _buildHandwritingLanguagePanel(context, provider);
+      case SettingsTab.translationLanguage:
+        return _buildTranslationLanguagePanel(context, provider);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // 1. Background Settings Panel (Exact image UI)
   // -------------------------------------------------------------------------
-  Widget _buildBackgroundPanel(
-    BuildContext context,
-    WhiteboardProvider provider,
-  ) {
+  Widget _buildBackgroundPanel(BuildContext context, WhiteboardProvider provider) {
     return Column(
       key: const ValueKey('background_panel'),
       mainAxisSize: MainAxisSize.min,
@@ -182,19 +168,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      LucideIcons.chevronLeft,
-                      size: 15,
-                      color: Color(0xFF2563EB),
-                    ),
+                    Icon(LucideIcons.chevronLeft, size: 15, color: Color(0xFF2563EB)),
                     SizedBox(width: 2),
                     Text(
                       'Settings',
-                      style: TextStyle(
-                        color: Color(0xFF2563EB),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: TextStyle(color: Color(0xFF2563EB), fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -204,20 +182,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
               child: Center(
                 child: Text(
                   'Background',
-                  style: TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(color: Color(0xFF0F172A), fontSize: 15, fontWeight: FontWeight.w700),
                 ),
               ),
             ),
             IconButton(
-              icon: const Icon(
-                LucideIcons.x,
-                size: 17,
-                color: Color(0xFF64748B),
-              ),
+              icon: const Icon(LucideIcons.x, size: 17, color: Color(0xFF64748B)),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Close',
               splashRadius: 14,
@@ -227,167 +197,247 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ],
         ),
         const SizedBox(height: 6),
-
-        // Section 1: Background Color Tray
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Background',
-                    style: TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
+        Flexible(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Section 1: Background Color Tray (4 rows of 6 theme colors)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
-                  Text(
-                    provider.canvasBackgroundColorName,
-                    style: const TextStyle(
-                      color: Color(0xFF334155),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Background',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                provider.canvasBackgroundImagePath != null
+                                    ? 'Custom Image'
+                                    : provider.canvasBackgroundColorName,
+                                style: const TextStyle(
+                                  color: Color(0xFF334155),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _buildRainbowPickerChip(
+                                context,
+                                provider,
+                                isSelected: provider.canvasBackgroundImagePath == null &&
+                                    !themeBackgroundColors.any((c) =>
+                                        c.toARGB32() == provider.canvasBackgroundColor.toARGB32()),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
 
-              // Row 1: Light colors (6 circles)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: _lightPresets.map((preset) {
-                  return _buildColorChip(
-                    color: preset.color,
-                    isSelected: provider.canvasBackgroundColor == preset.color,
-                    onTap: () =>
-                        provider.setCanvasBackgroundColor(preset.color),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 6),
-
-              // Row 2: Dark colors (5 circles) + Rainbow Color Wheel
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  ..._darkPresets.map((preset) {
-                    return _buildColorChip(
-                      color: preset.color,
-                      isSelected:
-                          provider.canvasBackgroundColor == preset.color,
-                      onTap: () =>
-                          provider.setCanvasBackgroundColor(preset.color),
-                    );
-                  }),
-                  _buildRainbowPickerChip(
-                    context,
-                    provider,
-                    isSelected:
-                        !_lightPresets.any(
-                          (p) => p.color == provider.canvasBackgroundColor,
-                        ) &&
-                        !_darkPresets.any(
-                          (p) => p.color == provider.canvasBackgroundColor,
+                      // 4 Rows of 6 theme background colors
+                      for (int row = 0; row < 4; row++) ...[
+                        if (row > 0) const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            for (int col = 0; col < 6; col++) ...[
+                              Builder(
+                                builder: (context) {
+                                  final color = themeBackgroundColors[row * 6 + col];
+                                  final isSelected = provider.canvasBackgroundImagePath == null &&
+                                      provider.canvasBackgroundColor.toARGB32() == color.toARGB32();
+                                  return _buildColorChip(
+                                    color: color,
+                                    isSelected: isSelected,
+                                    onTap: () => provider.setCanvasBackgroundColor(color),
+                                  );
+                                },
+                              ),
+                            ],
+                          ],
                         ),
+                      ],
+                    ],
                   ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 6),
+                ),
+                const SizedBox(height: 6),
 
-        // Section 2: Grid Pattern Tray
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Grid',
-                    style: TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
+                // Section 2: Grid Pattern Tray
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
-                  Text(
-                    provider.canvasGridType.displayName,
-                    style: const TextStyle(
-                      color: Color(0xFF334155),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Grid',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            provider.canvasGridType == CanvasGridType.none
+                                ? 'No Grid'
+                                : provider.canvasGridType.displayName,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Divider(
+                        height: 1,
+                        thickness: 0.8,
+                        color: const Color(0xFFE2E8F0).withValues(alpha: 0.8),
+                      ),
+                      const SizedBox(height: 8),
 
-              // Row 1: 8 grid tiles
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: _gridRow1.map((type) {
-                  return _buildGridTile(
-                    type: type,
-                    isSelected: provider.canvasGridType == type,
-                    onTap: () => provider.setCanvasGridType(type),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 6),
+                      // Row 1: 8 grid tiles
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: _gridRow1.map((type) {
+                          return _buildGridTile(
+                            type: type,
+                            isSelected: provider.canvasGridType == type,
+                            onTap: () => provider.setCanvasGridType(type),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 6),
 
-              // Row 2: 2 grid tiles aligned to match columns 1 & 2 of Row 1
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildGridTile(
-                    type: _gridRow2[0],
-                    isSelected: provider.canvasGridType == _gridRow2[0],
-                    onTap: () => provider.setCanvasGridType(_gridRow2[0]),
+                      // Row 2: 2 grid tiles aligned to match columns 1 & 2 of Row 1
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildGridTile(
+                            type: _gridRow2[0],
+                            isSelected: provider.canvasGridType == _gridRow2[0],
+                            onTap: () => provider.setCanvasGridType(_gridRow2[0]),
+                          ),
+                          _buildGridTile(
+                            type: _gridRow2[1],
+                            isSelected: provider.canvasGridType == _gridRow2[1],
+                            onTap: () => provider.setCanvasGridType(_gridRow2[1]),
+                          ),
+                          for (int i = 0; i < 6; i++)
+                            const SizedBox(width: _kGridTileSize, height: _kGridTileSize),
+                        ],
+                      ),
+                    ],
                   ),
-                  _buildGridTile(
-                    type: _gridRow2[1],
-                    isSelected: provider.canvasGridType == _gridRow2[1],
-                    onTap: () => provider.setCanvasGridType(_gridRow2[1]),
+                ),
+                const SizedBox(height: 6),
+
+                // Section 3: Custom Background Tray (Matching Reference Image)
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
-                  for (int i = 0; i < 6; i++)
-                    const SizedBox(
-                      width: _kGridTileSize,
-                      height: _kGridTileSize,
-                    ),
-                ],
-              ),
-            ],
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Custom',
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            provider.canvasBackgroundImagePath != null ? 'Custom' : 'Background',
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Divider(
+                        height: 1,
+                        thickness: 0.8,
+                        color: const Color(0xFFE2E8F0).withValues(alpha: 0.8),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          _buildCustomImagePickerButton(context, provider),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Reminder: Please select a jpg,\nbmp or png 3840*2160 image.',
+                              style: TextStyle(
+                                color: Color(0xFF94A3B8),
+                                fontSize: 10.5,
+                                height: 1.35,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -395,13 +445,70 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   // -------------------------------------------------------------------------
+  // Custom Background Image Picker Button
+  // -------------------------------------------------------------------------
+  Widget _buildCustomImagePickerButton(BuildContext context, WhiteboardProvider provider) {
+    final bool hasImage = provider.canvasBackgroundImagePath != null && File(provider.canvasBackgroundImagePath!).existsSync();
+
+    return GestureDetector(
+      onTap: () => _pickCustomBackgroundImage(context, provider),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 76,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: hasImage ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1), width: hasImage ? 2.0 : 1.0),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 3, offset: const Offset(0, 1))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: hasImage
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(File(provider.canvasBackgroundImagePath!), fit: BoxFit.cover),
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: GestureDetector(
+                      onTap: () => provider.setCanvasBackgroundImagePath(null),
+                      child: Container(
+                        padding: const EdgeInsets.all(2.5),
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.70), shape: BoxShape.circle),
+                        child: const Icon(LucideIcons.x, size: 11, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : const Center(child: Icon(LucideIcons.plus, size: 22, color: Color(0xFF1E293B))),
+      ),
+    );
+  }
+
+  Future<void> _pickCustomBackgroundImage(BuildContext context, WhiteboardProvider provider) async {
+    try {
+      final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'png', 'bmp']);
+      if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+        final path = result.files.first.path!;
+        provider.setCanvasBackgroundImagePath(path);
+      }
+    } catch (e) {
+      debugPrint('Error picking custom background image: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to pick background image: $e'), backgroundColor: Colors.redAccent));
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Color Chip Widget
   // -------------------------------------------------------------------------
-  Widget _buildColorChip({
-    required Color color,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildColorChip({required Color color, required bool isSelected, required VoidCallback onTap}) {
+    final bool isLight = color.computeLuminance() > 0.45;
     final bool isWhiteOrVeryLight = color.computeLuminance() > 0.85;
 
     return GestureDetector(
@@ -412,30 +519,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
         height: _kColorChipSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: isSelected
-              ? Border.all(color: const Color(0xFF2563EB), width: 1.8)
-              : null,
+          border: isSelected ? Border.all(color: const Color(0xFF2563EB), width: 1.8) : null,
         ),
         padding: EdgeInsets.all(isSelected ? 1.8 : 0.0),
         child: Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: color,
-            border: isWhiteOrVeryLight
-                ? Border.all(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    width: 0.8,
-                  )
-                : null,
-            boxShadow: [
-              if (!isSelected)
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
-            ],
+            border: isWhiteOrVeryLight ? Border.all(color: Colors.black.withValues(alpha: 0.12), width: 0.8) : null,
+            boxShadow: [if (!isSelected) BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 2, offset: const Offset(0, 1))],
           ),
+          child: isSelected
+              ? Center(
+                  child: Icon(
+                    Icons.check,
+                    size: 14,
+                    color: isLight ? const Color(0xFF0F172A) : Colors.white,
+                  ),
+                )
+              : null,
         ),
       ),
     );
@@ -444,11 +546,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // Rainbow Custom Color Chip Widget
   // -------------------------------------------------------------------------
-  Widget _buildRainbowPickerChip(
-    BuildContext context,
-    WhiteboardProvider provider, {
-    required bool isSelected,
-  }) {
+  Widget _buildRainbowPickerChip(BuildContext context, WhiteboardProvider provider, {required bool isSelected}) {
     return GestureDetector(
       onTap: () => _openCustomColorPicker(context, provider),
       child: AnimatedContainer(
@@ -457,9 +555,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
         height: _kColorChipSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: isSelected
-              ? Border.all(color: const Color(0xFF2563EB), width: 1.8)
-              : null,
+          border: isSelected ? Border.all(color: const Color(0xFF2563EB), width: 1.8) : null,
         ),
         padding: EdgeInsets.all(isSelected ? 1.8 : 0.0),
         child: Container(
@@ -478,9 +574,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
               ],
             ),
           ),
-          child: const Center(
-            child: Icon(LucideIcons.pipette, size: 11, color: Colors.white),
-          ),
+          child: const Center(child: Icon(LucideIcons.pipette, size: 11, color: Colors.white)),
         ),
       ),
     );
@@ -489,11 +583,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // Grid Pattern Tile Widget
   // -------------------------------------------------------------------------
-  Widget _buildGridTile({
-    required CanvasGridType type,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildGridTile({required CanvasGridType type, required bool isSelected, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -503,18 +593,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFF22262E), // Dark rounded tile background
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF2563EB) : Colors.transparent,
-            width: isSelected ? 1.8 : 1.0,
-          ),
+          border: Border.all(color: isSelected ? const Color(0xFF2563EB) : Colors.transparent, width: isSelected ? 1.8 : 1.0),
           boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.35),
-                    blurRadius: 4,
-                    spreadRadius: 0.5,
-                  ),
-                ]
+              ? [BoxShadow(color: const Color(0xFF2563EB).withValues(alpha: 0.35), blurRadius: 4, spreadRadius: 0.5)]
               : null,
         ),
         child: ClipRRect(
@@ -526,247 +607,357 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   // -------------------------------------------------------------------------
-  // 2. Main Settings Panel
+  // Helper: Custom Radio Circle matching reference design
   // -------------------------------------------------------------------------
-  Widget _buildMainSettingsPanel(
-    BuildContext context,
-    WhiteboardProvider provider,
-  ) {
+  Widget _buildRadioCircle({required bool isSelected}) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: isSelected ? const Color(0xFF0D9488) : const Color(0xFF9CA3AF), width: 2.0),
+      ),
+      child: isSelected
+          ? Center(
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF0D9488)),
+              ),
+            )
+          : null,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Main Settings Panel (Matching Photo 1)
+  // -------------------------------------------------------------------------
+  Widget _buildMainSettingsPanel(BuildContext context, WhiteboardProvider provider) {
     return Column(
       key: const ValueKey('main_panel'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Header
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Row(
-              children: [
-                Icon(LucideIcons.settings, size: 20, color: Color(0xFF0F172A)),
-                SizedBox(width: 8),
-                Text(
-                  'Settings',
-                  style: TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+            const SizedBox(width: 28),
+            const Text(
+              'Settings',
+              style: TextStyle(color: Color(0xFF1F2937), fontSize: 18, fontWeight: FontWeight.bold),
             ),
             IconButton(
-              icon: const Icon(
-                LucideIcons.x,
-                size: 18,
-                color: Color(0xFF64748B),
-              ),
+              icon: const Icon(LucideIcons.x, size: 20, color: Color(0xFF64748B)),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Close',
               splashRadius: 16,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
           ],
         ),
         const SizedBox(height: 10),
 
-        // Background category tile
-        _buildSettingNavTile(
-          icon: LucideIcons.palette,
-          iconColor: const Color(0xFF2563EB),
-          title: 'Background & Grid',
-          subtitle:
-              '${provider.canvasBackgroundColorName} • ${provider.canvasGridType.displayName}',
-          onTap: () => setState(() => _currentTab = SettingsTab.background),
-        ),
-        const SizedBox(height: 8),
+        // Scrollable content of cards
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Handwriting recognition language
+                _buildCardNavigationTile(
+                  title: 'Handwriting recognition language',
+                  subtitle: provider.selectedHandwritingLanguage,
+                  onTap: () => setState(() => _currentTab = SettingsTab.handwritingLanguage),
+                ),
+                const SizedBox(height: 10),
 
-        // Pen & Stylus category tile
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+                // 2. Translation language
+                _buildCardNavigationTile(
+                  title: 'Translation language',
+                  subtitle: 'Manage translation language models.',
+                  onTap: () => setState(() => _currentTab = SettingsTab.translationLanguage),
                 ),
-                child: const Icon(
-                  LucideIcons.penTool,
-                  color: Color(0xFF10B981),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Auto Nib Detection',
-                      style: TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 1),
-                    Text(
-                      'Thin / Thick stylus tip auto-detect',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              Transform.scale(
-                scale: 0.85,
-                child: Switch(
-                  value: provider.isAutoNibDetectionEnabled,
-                  onChanged: (v) => provider.setAutoNibDetectionEnabled(v),
-                  activeThumbColor: const Color(0xFF2563EB),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
+                const SizedBox(height: 10),
 
-        // About category tile
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+                // 3. Background & Grid
+                _buildCardNavigationTile(
+                  title: 'Background & Grid',
+                  subtitle: provider.canvasBackgroundImagePath != null
+                      ? 'Custom Image'
+                      : '${provider.canvasBackgroundColorName} • ${provider.canvasGridType == CanvasGridType.none ? "No Grid" : provider.canvasGridType.displayName}',
+                  onTap: () => setState(() => _currentTab = SettingsTab.background),
                 ),
-                child: const Icon(
-                  LucideIcons.info,
-                  color: Color(0xFF8B5CF6),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'PencilAI Whiteboard',
-                      style: TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 1),
-                    Text(
-                      'Version 1.0.0 • 75" Panel & Stylus Optimized',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSettingNavTile({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildCardNavigationTile({required String title, required String subtitle, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: iconColor, size: 18),
-            ),
-            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: const TextStyle(color: Color(0xFF1F2937), fontSize: 14.5, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF64748B),
-                      fontSize: 11,
-                    ),
-                  ),
+                  const SizedBox(height: 3),
+                  Text(subtitle, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
                 ],
               ),
             ),
-            const Icon(
-              LucideIcons.chevronRight,
-              size: 16,
-              color: Color(0xFF94A3B8),
-            ),
+            const Icon(LucideIcons.chevronRight, size: 20, color: Color(0xFF9CA3AF)),
           ],
         ),
       ),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. Handwriting Recognition Language Panel (Matching Photo 2)
+  // -------------------------------------------------------------------------
+  Widget _buildHandwritingLanguagePanel(BuildContext context, WhiteboardProvider provider) {
+    return Column(
+      key: const ValueKey('handwriting_lang_panel'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header with back chevron and title
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(LucideIcons.chevronLeft, size: 22, color: Color(0xFF0D9488)),
+              onPressed: () => setState(() => _currentTab = SettingsTab.main),
+              tooltip: 'Back to Settings',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
+            const Expanded(
+              child: Text(
+                'Handwriting recognition language',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF1F2937), fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(LucideIcons.x, size: 20, color: Color(0xFF64748B)),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'Close',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Language List
+        Flexible(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: WhiteboardProvider.kHandwritingLanguages.length,
+              separatorBuilder: (ctx, i) => Divider(height: 1, color: const Color(0xFFF1F5F9)),
+              itemBuilder: (ctx, index) {
+                final lang = WhiteboardProvider.kHandwritingLanguages[index];
+                final isSelected =
+                    provider.selectedHandwritingLanguage == lang.name ||
+                    (lang.id == 'follow_system' && provider.selectedHandwritingLanguage.contains('Follow System'));
+                final isDownloaded = provider.isHandwritingLanguageDownloaded(lang.id);
+                final downloadProgress = provider.handwritingDownloadProgress[lang.id];
+                final isDownloading = downloadProgress != null;
+
+                return InkWell(
+                  onTap: () {
+                    if (isDownloaded) {
+                      provider.setSelectedHandwritingLanguage(lang.name);
+                    } else if (!isDownloading) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Please download ${lang.displayName} model first before using.'),
+                          backgroundColor: const Color(0xFF1F2937),
+                          action: SnackBarAction(
+                            label: 'Download',
+                            textColor: const Color(0xFF38BDF8),
+                            onPressed: () => provider.downloadHandwritingLanguage(lang.id),
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        _buildRadioCircle(isSelected: isSelected),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            lang.nativeName,
+                            style: TextStyle(
+                              color: const Color(0xFF1F2937),
+                              fontSize: 15,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                        if (isDownloading)
+                          SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(value: downloadProgress, strokeWidth: 2.2, color: const Color(0xFF0D9488)),
+                          )
+                        else if (isDownloaded)
+                          IconButton(
+                            icon: const Icon(LucideIcons.check, size: 20, color: Color(0xFF10B981)),
+                            onPressed: () => provider.setSelectedHandwritingLanguage(lang.name),
+                            tooltip: 'Model downloaded',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          )
+                        else
+                          IconButton(
+                            icon: const Icon(LucideIcons.download, size: 20, color: Color(0xFF64748B)),
+                            onPressed: () => provider.downloadHandwritingLanguage(lang.id),
+                            tooltip: 'Download ${lang.name} model',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 4. Translation Language Panel (Matching Photo 3)
+  // -------------------------------------------------------------------------
+  Widget _buildTranslationLanguagePanel(BuildContext context, WhiteboardProvider provider) {
+    return Column(
+      key: const ValueKey('translation_lang_panel'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header with back chevron and title
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(LucideIcons.chevronLeft, size: 22, color: Color(0xFF0D9488)),
+              onPressed: () => setState(() => _currentTab = SettingsTab.main),
+              tooltip: 'Back to Settings',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
+            const Expanded(
+              child: Text(
+                'Translation language',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF1F2937), fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(LucideIcons.x, size: 20, color: Color(0xFF64748B)),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'Close',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Translation Language List matching Photo 3
+        Flexible(
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: TranslationService.supportedLanguages.length,
+              separatorBuilder: (ctx, i) => Divider(height: 1, color: const Color(0xFFF1F5F9)),
+              itemBuilder: (ctx, index) {
+                final lang = TranslationService.supportedLanguages[index];
+                final isDownloaded = provider.isTranslationLanguageDownloaded(lang.code);
+                final downloadProgress = provider.translationDownloadProgress[lang.code];
+                final isDownloading = downloadProgress != null;
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          lang.nativeName,
+                          style: const TextStyle(color: Color(0xFF1F2937), fontSize: 15, fontWeight: FontWeight.w400),
+                        ),
+                      ),
+                      if (isDownloading)
+                        SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(value: downloadProgress, strokeWidth: 2.2, color: const Color(0xFF0D9488)),
+                        )
+                      else if (isDownloaded)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Text(
+                              'Installed',
+                              style: TextStyle(color: Color(0xFF10B981), fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(LucideIcons.check, size: 18, color: Color(0xFF10B981)),
+                          ],
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(LucideIcons.download, size: 20, color: Color(0xFF64748B)),
+                          onPressed: () => provider.downloadTranslationLanguage(lang),
+                          tooltip: 'Download ${lang.name} model',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -806,18 +997,10 @@ class _GridTilePainter extends CustomPainter {
 
       case CanvasGridType.denseGrid:
         for (double x = 4; x < size.width; x += 4.5) {
-          canvas.drawLine(
-            Offset(x, 0),
-            Offset(x, size.height),
-            linePaint..strokeWidth = 0.5,
-          );
+          canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint..strokeWidth = 0.5);
         }
         for (double y = 4; y < size.height; y += 4.5) {
-          canvas.drawLine(
-            Offset(0, y),
-            Offset(size.width, y),
-            linePaint..strokeWidth = 0.5,
-          );
+          canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint..strokeWidth = 0.5);
         }
         break;
 
@@ -843,9 +1026,7 @@ class _GridTilePainter extends CustomPainter {
             Offset(x, 0),
             Offset(x, size.height),
             Paint()
-              ..color = isMajor
-                  ? const Color(0xFF38BDF8)
-                  : Colors.white.withValues(alpha: 0.25)
+              ..color = isMajor ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.25)
               ..strokeWidth = isMajor ? 0.8 : 0.5,
           );
         }
@@ -855,9 +1036,7 @@ class _GridTilePainter extends CustomPainter {
             Offset(0, y),
             Offset(size.width, y),
             Paint()
-              ..color = isMajor
-                  ? const Color(0xFF38BDF8)
-                  : Colors.white.withValues(alpha: 0.25)
+              ..color = isMajor ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.25)
               ..strokeWidth = isMajor ? 0.8 : 0.5,
           );
         }
@@ -897,24 +1076,15 @@ class _GridTilePainter extends CustomPainter {
           canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
         }
         for (double x = 0; x < size.width + 16; x += 7.5) {
-          canvas.drawLine(
-            Offset(x, 0),
-            Offset(x - size.height * 0.6, size.height),
-            linePaint,
-          );
-          canvas.drawLine(
-            Offset(x - 16, 0),
-            Offset(x - 16 + size.height * 0.6, size.height),
-            linePaint,
-          );
+          canvas.drawLine(Offset(x, 0), Offset(x - size.height * 0.6, size.height), linePaint);
+          canvas.drawLine(Offset(x - 16, 0), Offset(x - 16 + size.height * 0.6, size.height), linePaint);
         }
         break;
     }
   }
 
   @override
-  bool shouldRepaint(covariant _GridTilePainter oldDelegate) =>
-      oldDelegate.type != type;
+  bool shouldRepaint(covariant _GridTilePainter oldDelegate) => oldDelegate.type != type;
 }
 
 typedef _GridTileThumbnailPainter = _GridTilePainter;

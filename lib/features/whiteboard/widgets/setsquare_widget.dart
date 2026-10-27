@@ -116,6 +116,7 @@ class _SetSquareWidgetState extends State<SetSquareWidget> {
     if (a != null) _lastPointerAngle = a;
   }
 
+
   void _rotateUpdate(DragUpdateDetails d) {
     final a = _pointerAngle(d.globalPosition);
     if (a == null) return;

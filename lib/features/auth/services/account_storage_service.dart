@@ -11,6 +11,7 @@ class AccountStorageService {
     return File('${dir.path}/$_fileName');
   }
 
+
   /// Get list of all locally saved recent accounts
   Future<List<Map<String, dynamic>>> getRecentAccounts() async {
     try {

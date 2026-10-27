@@ -23,6 +23,7 @@ class ChemicalElement {
     required this.state,
   });
 
+
   Color get categoryColor => getCategoryColor(category);
 
   static Color getCategoryColor(String category) {

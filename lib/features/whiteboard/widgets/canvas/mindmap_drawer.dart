@@ -215,6 +215,7 @@ class MindMapDrawer {
         );
       }
 
+
       // "..." (delete)
       final top = basePos + mm.btnCenter(node, MindMapAction.menu);
       canvas.drawCircle(top, 8.5, btnPaint);

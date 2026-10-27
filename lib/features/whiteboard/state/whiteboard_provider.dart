@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/board_element.dart';
 import '../models/board_page.dart';
@@ -13,12 +17,36 @@ import '../models/mind_map_element.dart';
 import '../models/chemical_element_element.dart';
 import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
+import '../services/translation_service.dart';
+import '../services/smart_pen_service.dart';
 import '../widgets/whiteboard_canvas.dart';
 import '../widgets/canvas/canvas_grid_painter.dart';
+import '../widgets/canvas/whiteboard_painter.dart';
 
 enum WhiteboardTool { pen, eraser, shape, image, select, preview }
 
 enum PenProfile { thin, thick }
+
+enum MultiFingerWritingMode { write, zoomOrMove }
+
+class HandwritingLanguageItem {
+  final String id;
+  final String name;
+  final String nativeName;
+  final String bcpCode;
+
+  const HandwritingLanguageItem({
+    required this.id,
+    required this.name,
+    required this.nativeName,
+    required this.bcpCode,
+  });
+
+  String get displayName =>
+      (id == 'follow_system' || id == 'en' || nativeName == name)
+      ? name
+      : '$nativeName ($name)';
+}
 
 abstract class Command {
   void execute(WhiteboardProvider provider);
@@ -55,6 +83,33 @@ class RemoveElementsCommand extends Command {
   @override
   void undo(WhiteboardProvider provider) {
     provider.pages[pageIndex].elements.addAll(elements);
+  }
+}
+
+class ReplaceElementCommand extends Command {
+  final BoardElement oldElement;
+  final BoardElement newElement;
+  final int pageIndex;
+  ReplaceElementCommand(this.oldElement, this.newElement, this.pageIndex);
+
+  @override
+  void execute(WhiteboardProvider provider) {
+    final elements = provider.pages[pageIndex].elements;
+    final idx = elements.indexWhere((e) => e.id == oldElement.id);
+    if (idx != -1) {
+      elements[idx] = newElement;
+    } else {
+      elements.add(newElement);
+    }
+  }
+
+  @override
+  void undo(WhiteboardProvider provider) {
+    final elements = provider.pages[pageIndex].elements;
+    final idx = elements.indexWhere((e) => e.id == newElement.id);
+    if (idx != -1) {
+      elements[idx] = oldElement;
+    }
   }
 }
 
@@ -177,6 +232,7 @@ class WhiteboardProvider extends ChangeNotifier {
     PenType.fountainPen: 2.5,
     PenType.brush: 3.0,
     PenType.marker: 6.0,
+    PenType.smartPen: 2.5,
   };
 
   // Thick Pen Profile Settings (default 3px)
@@ -187,6 +243,7 @@ class WhiteboardProvider extends ChangeNotifier {
     PenType.fountainPen: 4.0,
     PenType.brush: 5.0,
     PenType.marker: 8.0,
+    PenType.smartPen: 3.5,
   };
 
   bool _isAutoNibDetectionEnabled = true;
@@ -198,6 +255,140 @@ class WhiteboardProvider extends ChangeNotifier {
 
   final Set<String> _selectedElementIds = {};
   Path? _lassoPath;
+
+  // Reference Handwriting Recognition Languages
+  static const List<HandwritingLanguageItem> kHandwritingLanguages = [
+    HandwritingLanguageItem(
+      id: 'follow_system',
+      name: 'Follow System (English)',
+      nativeName: 'Follow System (English)',
+      bcpCode: 'en',
+    ),
+    HandwritingLanguageItem(
+      id: 'en',
+      name: 'English',
+      nativeName: 'English',
+      bcpCode: 'en',
+    ),
+    HandwritingLanguageItem(
+      id: 'kn',
+      name: 'Kannada',
+      nativeName: 'ಕನ್ನಡ',
+      bcpCode: 'kn',
+    ),
+    HandwritingLanguageItem(
+      id: 'hi',
+      name: 'Hindi',
+      nativeName: 'हिन्दी',
+      bcpCode: 'hi',
+    ),
+    HandwritingLanguageItem(
+      id: 'mr',
+      name: 'Marathi',
+      nativeName: 'मराठी',
+      bcpCode: 'mr',
+    ),
+    HandwritingLanguageItem(
+      id: 'te',
+      name: 'Telugu',
+      nativeName: 'తెలుగు',
+      bcpCode: 'te',
+    ),
+    HandwritingLanguageItem(
+      id: 'ta',
+      name: 'Tamil',
+      nativeName: 'தமிழ்',
+      bcpCode: 'ta',
+    ),
+    HandwritingLanguageItem(
+      id: 'bn',
+      name: 'Bengali',
+      nativeName: 'বাংলা',
+      bcpCode: 'bn',
+    ),
+    HandwritingLanguageItem(
+      id: 'gu',
+      name: 'Gujarati',
+      nativeName: 'ગુજરાતી',
+      bcpCode: 'gu',
+    ),
+    HandwritingLanguageItem(
+      id: 'ml',
+      name: 'Malayalam',
+      nativeName: 'മലയാളം',
+      bcpCode: 'ml',
+    ),
+    HandwritingLanguageItem(
+      id: 'pa',
+      name: 'Punjabi',
+      nativeName: 'ਪੰਜਾਬੀ',
+      bcpCode: 'pa',
+    ),
+    HandwritingLanguageItem(
+      id: 'es',
+      name: 'Spanish',
+      nativeName: 'Español',
+      bcpCode: 'es',
+    ),
+    HandwritingLanguageItem(
+      id: 'fr',
+      name: 'French',
+      nativeName: 'Français',
+      bcpCode: 'fr',
+    ),
+    HandwritingLanguageItem(
+      id: 'de',
+      name: 'German',
+      nativeName: 'Deutsch',
+      bcpCode: 'de',
+    ),
+    HandwritingLanguageItem(
+      id: 'ru',
+      name: 'Russian',
+      nativeName: 'Русский',
+      bcpCode: 'ru',
+    ),
+    HandwritingLanguageItem(
+      id: 'zh',
+      name: 'Chinese',
+      nativeName: '中文',
+      bcpCode: 'zh',
+    ),
+    HandwritingLanguageItem(
+      id: 'ja',
+      name: 'Japanese',
+      nativeName: '日本語',
+      bcpCode: 'ja',
+    ),
+    HandwritingLanguageItem(
+      id: 'ko',
+      name: 'Korean',
+      nativeName: '한국어',
+      bcpCode: 'ko',
+    ),
+    HandwritingLanguageItem(
+      id: 'ar',
+      name: 'Arabic',
+      nativeName: 'العربية',
+      bcpCode: 'ar',
+    ),
+  ];
+
+  // Settings properties matching reference screens
+  MultiFingerWritingMode _multiFingerWritingMode = MultiFingerWritingMode.write;
+  bool _drawCircleToSelect = false;
+  bool _automaticBrightness = false;
+
+  String _selectedHandwritingLanguage = 'Follow System (English)';
+  final Set<String> _downloadedHandwritingLanguages = {'follow_system', 'en'};
+  final Map<String, double> _handwritingDownloadProgress = {};
+
+  final Set<String> _downloadedTranslationLanguages = {'en'};
+  final Map<String, double> _translationDownloadProgress = {};
+
+  WhiteboardProvider() {
+    _loadSettings();
+  }
 
   final List<Command> _undoStack = [];
   final List<Command> _redoStack = [];
@@ -241,6 +432,7 @@ class WhiteboardProvider extends ChangeNotifier {
       case PenType.pen:
       case PenType.fountainPen:
       case PenType.brush:
+      case PenType.smartPen:
         return 1.0;
     }
   }
@@ -249,6 +441,7 @@ class WhiteboardProvider extends ChangeNotifier {
     switch (currentPenType) {
       case PenType.pen:
       case PenType.fountainPen:
+      case PenType.smartPen:
         return _activePenProfile == PenProfile.thin ? 8.0 : 18.0;
       case PenType.brush:
         return _activePenProfile == PenProfile.thin ? 10.0 : 22.0;
@@ -286,11 +479,21 @@ class WhiteboardProvider extends ChangeNotifier {
   Color _canvasBackgroundColor = Colors.white;
   Color get canvasBackgroundColor => _canvasBackgroundColor;
 
+  String? _canvasBackgroundImagePath;
+  String? get canvasBackgroundImagePath => _canvasBackgroundImagePath;
+
   CanvasGridType _canvasGridType = CanvasGridType.none;
   CanvasGridType get canvasGridType => _canvasGridType;
 
   void setCanvasBackgroundColor(Color color) {
     _canvasBackgroundColor = color;
+    _canvasBackgroundImagePath = null;
+    _notify();
+  }
+
+  void setCanvasBackgroundImagePath(String? path) {
+    _canvasBackgroundImagePath = path;
+    _boardVersion++;
     _notify();
   }
 
@@ -299,18 +502,265 @@ class WhiteboardProvider extends ChangeNotifier {
     _notify();
   }
 
+  MultiFingerWritingMode get multiFingerWritingMode => _multiFingerWritingMode;
+  bool get drawCircleToSelect => _drawCircleToSelect;
+  bool get automaticBrightness => _automaticBrightness;
+  String get selectedHandwritingLanguage => _selectedHandwritingLanguage;
+
+  String get selectedHandwritingLanguageShortName {
+    if (_selectedHandwritingLanguage.toLowerCase().contains('english') ||
+        _selectedHandwritingLanguage == 'en' ||
+        _selectedHandwritingLanguage.contains('Follow System')) {
+      return 'EN';
+    }
+    final item = kHandwritingLanguages.firstWhere(
+      (l) =>
+          l.name == _selectedHandwritingLanguage ||
+          l.displayName == _selectedHandwritingLanguage,
+      orElse: () => kHandwritingLanguages[0],
+    );
+    return item.nativeName.isNotEmpty ? item.nativeName : item.name;
+  }
+
+  Set<String> get downloadedHandwritingLanguages =>
+      Set.unmodifiable(_downloadedHandwritingLanguages);
+  Map<String, double> get handwritingDownloadProgress =>
+      Map.unmodifiable(_handwritingDownloadProgress);
+  List<HandwritingLanguageItem> get downloadedHandwritingLanguageItems =>
+      kHandwritingLanguages
+          .where((l) => _downloadedHandwritingLanguages.contains(l.id))
+          .toList();
+
+  Set<String> get downloadedTranslationLanguages =>
+      Set.unmodifiable(_downloadedTranslationLanguages);
+  Map<String, double> get translationDownloadProgress =>
+      Map.unmodifiable(_translationDownloadProgress);
+  List<SupportedLanguage> get downloadedTranslationLanguageItems =>
+      TranslationService.supportedLanguages
+          .where((l) => _downloadedTranslationLanguages.contains(l.code))
+          .toList();
+
+  void setMultiFingerWritingMode(MultiFingerWritingMode mode) {
+    _multiFingerWritingMode = mode;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setDrawCircleToSelect(bool val) {
+    _drawCircleToSelect = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void setAutomaticBrightness(bool val) {
+    _automaticBrightness = val;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  bool isHandwritingLanguageDownloaded(String langIdOrName) {
+    if (_downloadedHandwritingLanguages.contains(langIdOrName)) return true;
+    final item = kHandwritingLanguages.firstWhere(
+      (l) =>
+          l.id == langIdOrName ||
+          l.name == langIdOrName ||
+          l.displayName == langIdOrName,
+      orElse: () => const HandwritingLanguageItem(
+        id: '',
+        name: '',
+        nativeName: '',
+        bcpCode: '',
+      ),
+    );
+    return item.id.isNotEmpty &&
+        _downloadedHandwritingLanguages.contains(item.id);
+  }
+
+  void setSelectedHandwritingLanguage(String langName) {
+    _selectedHandwritingLanguage = langName;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  Future<void> downloadHandwritingLanguage(String langId) async {
+    if (_downloadedHandwritingLanguages.contains(langId)) return;
+    _handwritingDownloadProgress[langId] = 0.15;
+    notifyListeners();
+
+    for (int p = 30; p <= 100; p += 25) {
+      await Future.delayed(const Duration(milliseconds: 250));
+      _handwritingDownloadProgress[langId] = p / 100.0;
+      notifyListeners();
+    }
+
+    _downloadedHandwritingLanguages.add(langId);
+    _handwritingDownloadProgress.remove(langId);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  bool isTranslationLanguageDownloaded(String code) {
+    return _downloadedTranslationLanguages.contains(code);
+  }
+
+  Future<bool> downloadTranslationLanguage(SupportedLanguage lang) async {
+    if (_downloadedTranslationLanguages.contains(lang.code)) return true;
+    _translationDownloadProgress[lang.code] = 0.2;
+    notifyListeners();
+
+    final downloadFuture = TranslationService().downloadLanguageModel(
+      lang.mlKitLanguage,
+    );
+
+    for (int p = 40; p <= 90; p += 25) {
+      await Future.delayed(const Duration(milliseconds: 260));
+      _translationDownloadProgress[lang.code] = p / 100.0;
+      notifyListeners();
+    }
+
+    await downloadFuture;
+    _downloadedTranslationLanguages.add(lang.code);
+    _translationDownloadProgress.remove(lang.code);
+    _saveSettings();
+    notifyListeners();
+    return true;
+  }
+
+  Future<void> checkDownloadedTranslationModels() async {
+    for (var lang in TranslationService.supportedLanguages) {
+      final downloaded = await TranslationService().isModelDownloaded(
+        lang.mlKitLanguage,
+      );
+      if (downloaded) {
+        _downloadedTranslationLanguages.add(lang.code);
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/whiteboard_settings.json');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final map = jsonDecode(content) as Map<String, dynamic>;
+
+        if (map['multiFingerWritingMode'] != null) {
+          _multiFingerWritingMode = MultiFingerWritingMode
+              .values[map['multiFingerWritingMode'] as int];
+        }
+        if (map['drawCircleToSelect'] != null) {
+          _drawCircleToSelect = map['drawCircleToSelect'] as bool;
+        }
+        if (map['automaticBrightness'] != null) {
+          _automaticBrightness = map['automaticBrightness'] as bool;
+        }
+        if (map['selectedHandwritingLanguage'] != null) {
+          _selectedHandwritingLanguage =
+              map['selectedHandwritingLanguage'] as String;
+        }
+        if (map['downloadedHandwritingLanguages'] != null) {
+          _downloadedHandwritingLanguages.addAll(
+            (map['downloadedHandwritingLanguages'] as List).cast<String>(),
+          );
+        }
+        if (map['downloadedTranslationLanguages'] != null) {
+          _downloadedTranslationLanguages.addAll(
+            (map['downloadedTranslationLanguages'] as List).cast<String>(),
+          );
+        }
+        notifyListeners();
+      }
+      unawaited(checkDownloadedTranslationModels());
+    } catch (e) {
+      debugPrint('Error loading whiteboard settings: $e');
+    }
+  }
+
+  Future<void> _saveSettings() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/whiteboard_settings.json');
+      final map = {
+        'multiFingerWritingMode': _multiFingerWritingMode.index,
+        'drawCircleToSelect': _drawCircleToSelect,
+        'automaticBrightness': _automaticBrightness,
+        'selectedHandwritingLanguage': _selectedHandwritingLanguage,
+        'downloadedHandwritingLanguages': _downloadedHandwritingLanguages
+            .toList(),
+        'downloadedTranslationLanguages': _downloadedTranslationLanguages
+            .toList(),
+      };
+      await file.writeAsString(jsonEncode(map));
+    } catch (e) {
+      debugPrint('Error saving whiteboard settings: $e');
+    }
+  }
+
+  static const List<Color> themeBackgroundColors = [
+    // Row 1
+    Color(0xFFE5E8EC), Color(0xFFD2E4F6), Color(0xFFC4DFD6),
+    Color(0xFF73777B), Color(0xFF2F3133), Color(0xFF121314),
+
+    // Row 2
+    Color(0xFF5CA3DF), Color(0xFF3DAE97), Color(0xFF7BBF37),
+    Color(0xFFE0A96D), Color(0xFFC87B88), Color(0xFF5D62B1),
+
+    // Row 3
+    Color(0xFF0060CA), Color(0xFF007D49), Color(0xFF329202), // Selected ✓
+    Color(0xFFD87D0E), Color(0xFFBA2D2D), Color(0xFF1C1582),
+
+    // Row 4
+    Color(0xFF0C0E12), Color(0xFF0F1410), Color(0xFF1B2A10),
+    Color(0xFF3B2818), Color(0xFF2B1218), Color(0xFF111226),
+  ];
+
   static const Map<int, String> kPresetColorNames = {
+    // Row 1
+    0xFFE5E8EC: 'Light Grey',
+    0xFFD2E4F6: 'Soft Sky',
+    0xFFC4DFD6: 'Soft Mint',
+    0xFF73777B: 'Slate Grey',
+    0xFF2F3133: 'Graphite',
+    0xFF121314: 'Pitch Black',
+
+    // Row 2
+    0xFF5CA3DF: 'Sky Blue',
+    0xFF3DAE97: 'Teal Green',
+    0xFF7BBF37: 'Lime Green',
+    0xFFE0A96D: 'Warm Amber',
+    0xFFC87B88: 'Dusty Rose',
+    0xFF5D62B1: 'Iris Violet',
+
+    // Row 3
+    0xFF0060CA: 'Royal Blue',
+    0xFF007D49: 'Deep Emerald',
+    0xFF329202: 'Chalkboard Green',
+    0xFFD87D0E: 'Tangerine',
+    0xFFBA2D2D: 'Crimson Red',
+    0xFF1C1582: 'Deep Navy',
+
+    // Row 4
+    0xFF0C0E12: 'Obsidian Black',
+    0xFF0F1410: 'Dark Forest',
+    0xFF1B2A10: 'Deep Olive',
+    0xFF3B2818: 'Dark Mocha',
+    0xFF2B1218: 'Deep Wine',
+    0xFF111226: 'Midnight Blue',
+
+    // Legacy presets
     0xFFFFFFFF: 'Cloud White',
     0xFFF8FAFC: 'Cloud White',
     0xFFFDE8D7: 'Warm Peach',
     0xFFE2F0D9: 'Soft Mint',
-    0xFFD0E8F2: 'Quiet blue',
+    0xFFD0E8F2: 'Quiet Blue',
     0xFFE1D9F0: 'Soft Lavender',
     0xFFFADCDD: 'Soft Rose',
     0xFF1E1E1E: 'Pitch Black',
     0xFF36322E: 'Dark Charcoal',
     0xFF21352A: 'Forest Green',
-    0xFF1D3557: 'Quiet blue',
+    0xFF1D3557: 'Quiet Blue',
     0xFF2D2545: 'Midnight Violet',
   };
 
@@ -1177,11 +1627,23 @@ class WhiteboardProvider extends ChangeNotifier {
     List<Offset>? samples; // sirf shapes ke liye, lazily banta hai
 
     for (final element in elements) {
-      if (element is! StrokeElement && element is! ShapeElement) continue;
+      // PPT / PDF slides, document elements, and regular images must NEVER be erased!
+      // Only pen strokes, drawn shapes, and SmartPen converted doodles are erasable.
+      if (element is! StrokeElement &&
+          element is! ShapeElement &&
+          !(element is ImageElement &&
+              element.isSmartPen &&
+              !element.isDocumentOrSlide)) {
+        continue;
+      }
       if (!_isInCurrentView(element)) continue;
 
-      // Fast spatial filter (raw points ke saath match karta hai)
-      if (!eraserBox.overlaps(element.getRawBounds().inflate(1.0))) continue;
+      // Fast spatial filter
+      final rawBounds = element.getRawBounds();
+      final double rotMargin = element.rotation != 0
+          ? max(rawBounds.width, rawBounds.height) * 0.5 + 1.0
+          : 1.0;
+      if (!eraserBox.overlaps(rawBounds.inflate(rotMargin))) continue;
 
       if (element is StrokeElement) {
         final segments = _splitStroke(element.points, p1, p2, radiusSq);
@@ -1244,6 +1706,23 @@ class WhiteboardProvider extends ChangeNotifier {
           }
           if (hit) replacements[element.id] = const [];
         }
+      } else if (element is ImageElement &&
+          element.isSmartPen &&
+          !element.isDocumentOrSlide) {
+        // Only SmartPen doodle cliparts (user hand-drawn doodles converted to clipart) can be erased.
+        // PPT/PDF slides and user-imported images are strictly protected and never erased!
+        samples ??= _sweepSamples(p1, p2, radius);
+        final raw = element.getRawBounds();
+        final effRadius = radius / (element.scale > 0 ? element.scale : 1.0);
+        bool hit = false;
+        for (final s in samples) {
+          final local = _toElementLocal(element, s) - element.position;
+          if ((Offset.zero & raw.size).inflate(effRadius).contains(local)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) replacements[element.id] = const [];
       }
     }
 
@@ -1262,6 +1741,10 @@ class WhiteboardProvider extends ChangeNotifier {
     elements
       ..clear()
       ..addAll(rebuilt);
+
+    if (_selectedElementIds.isNotEmpty) {
+      _selectedElementIds.removeWhere((id) => replacements.containsKey(id));
+    }
 
     _notify(); // poore erase call ke liye sirf ek notify
   }
@@ -1449,7 +1932,8 @@ class WhiteboardProvider extends ChangeNotifier {
             _toElementLocal(element, localPosition) - element.position;
         final raw = element.getRawBounds();
         // Generous tap hit area for Text (18px padding around actual text size)
-        if ((Offset.zero & raw.size).inflate(18).contains(local)) return element;
+        if ((Offset.zero & raw.size).inflate(18).contains(local))
+          return element;
       } else if (element is ImageElement ||
           element is DocumentElement ||
           element is TableElement ||
@@ -1457,7 +1941,8 @@ class WhiteboardProvider extends ChangeNotifier {
         final local =
             _toElementLocal(element, localPosition) - element.position;
         final raw = element.getRawBounds();
-        if ((Offset.zero & raw.size).inflate(10).contains(local)) return element;
+        if ((Offset.zero & raw.size).inflate(10).contains(local))
+          return element;
       }
     }
     return null;
@@ -1645,6 +2130,7 @@ class WhiteboardProvider extends ChangeNotifier {
           : 'Educational teaching slide ${_currentPageIndex + 1}.';
     }
 
+
     // Limit to max 5 slide images per prompt to avoid payload limit
     if (imagePaths.length > 5) {
       imagePaths = imagePaths.sublist(0, 5);
@@ -1682,5 +2168,61 @@ class WhiteboardProvider extends ChangeNotifier {
     _updateInternalPoints(el, delta); // stroke/shape ke points bhi shift
     el.invalidateBounds();
     addElement(el);
+  }
+
+  // --- SMART PEN (AUTODRAW) SYSTEM ---
+  StrokeElement? _activeSmartPenStroke;
+  StrokeElement? get activeSmartPenStroke => _activeSmartPenStroke;
+
+  void setActiveSmartPenStroke(StrokeElement stroke) {
+    if (stroke.isDotOrTap) return;
+    _activeSmartPenStroke = stroke;
+    notifyListeners();
+  }
+
+  void clearActiveSmartPenStroke() {
+    if (_activeSmartPenStroke != null) {
+      _activeSmartPenStroke = null;
+      notifyListeners();
+    }
+  }
+
+  Future<void> replaceSmartPenStrokeWithObject(
+    StrokeElement stroke,
+    SmartPenCandidate candidate,
+  ) async {
+    final rawBounds = stroke.getRawBounds();
+    final double targetWidth = max(rawBounds.width, 70.0);
+    final double targetHeight = max(rawBounds.height, 70.0);
+    final size = Size(targetWidth, targetHeight);
+
+    // Render candidate vector clipart to image file
+    final imagePath = await candidate.renderToImageFile(stroke.color, size);
+
+    // Create ImageElement positioned right where the doodle was drawn
+    final imageElement = ImageElement(
+      id: const Uuid().v4(),
+      position: Offset(
+        rawBounds.center.dx - targetWidth / 2,
+        rawBounds.center.dy - targetHeight / 2,
+      ),
+      imageUrl: imagePath,
+      size: size,
+      isTransparent: true,
+      isSmartPen: true,
+    );
+
+    // Replace stroke using command for clean Undo/Redo
+    final cmd = ReplaceElementCommand(stroke, imageElement, _currentPageIndex);
+    _undoStack.add(cmd);
+    _redoStack.clear();
+    cmd.execute(this);
+
+    // Keep canvas clean without showing selection handles or bottom toolbar
+    clearSelection();
+
+    _activeSmartPenStroke = null;
+    WhiteboardPainter.invalidateCache();
+    refreshBoard();
   }
 }

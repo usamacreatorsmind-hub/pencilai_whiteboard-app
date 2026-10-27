@@ -11,10 +11,12 @@ class SmartWritingService {
   factory SmartWritingService() => _instance;
   SmartWritingService._internal();
 
+
   /// Converts selected handwritten strokes to clean formatted [TextElement]s
   Future<bool> convertSelectedStrokesToText(WhiteboardProvider provider) async {
     final selectedIds = provider.selectedElementIds;
     if (selectedIds.isEmpty) return false;
+
 
     final selectedStrokes = provider.currentPage.elements
         .where((e) => selectedIds.contains(e.id) && e is StrokeElement)
@@ -33,18 +35,26 @@ class SmartWritingService {
     }
 
     // 2. Capture ONLY selected strokes region as in-memory bytes for fast AI OCR
-    final imageBytes = await BoardStorageService().captureSelectedElementsBytes(selectedStrokes);
+    final imageBytes = await BoardStorageService().captureSelectedElementsBytes(
+      selectedStrokes,
+    );
     if (imageBytes == null) return false;
 
-    // 3. Fast AI Vision OCR
-    final recognizedText = await AiService().recognizeHandwriting(imageBytes: imageBytes);
-    if (recognizedText.isEmpty || recognizedText.startsWith('Error') || recognizedText.startsWith('⚠️')) {
+    // 3. Fast AI Vision OCR (SmartWrite is always in English)
+    final recognizedText = await AiService().recognizeHandwriting(
+      imageBytes: imageBytes,
+      language: 'English',
+    );
+    if (recognizedText.isEmpty ||
+        recognizedText.startsWith('Error') ||
+        recognizedText.startsWith('⚠️')) {
       return false;
     }
 
     // Clean up text
     final cleanText = recognizedText.trim();
-    if (cleanText.isEmpty || cleanText.toLowerCase().contains('no text visible')) {
+    if (cleanText.isEmpty ||
+        cleanText.toLowerCase().contains('no text visible')) {
       return false;
     }
 
@@ -74,7 +84,9 @@ class SmartWritingService {
       color: dominantColor,
       fontSize: computedFontSize,
       size: actualTextSize,
-      docPage: provider.isDocumentOverlayOpen ? provider.overlayCurrentPage : null,
+      docPage: provider.isDocumentOverlayOpen
+          ? provider.overlayCurrentPage
+          : null,
     );
 
     // 6. Swap out old strokes for the new clean TextElement

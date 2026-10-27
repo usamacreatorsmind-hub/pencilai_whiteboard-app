@@ -19,6 +19,7 @@ class TeacherFirestoreService {
     'Computer Science',
   ];
 
+
   /// Fetch master subjects list from Firestore `subjects_master` collection.
   /// If collection is empty, seeds default subjects for seamless first-time usage.
   Future<List<String>> fetchMasterSubjects() async {

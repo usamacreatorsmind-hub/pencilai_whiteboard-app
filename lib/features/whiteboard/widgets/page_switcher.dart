@@ -18,6 +18,7 @@ class PageSwitcher extends StatelessWidget {
           'Are you sure you want to delete this page? This action cannot be undone.',
           style: TextStyle(color: Colors.grey),
         ),
+
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

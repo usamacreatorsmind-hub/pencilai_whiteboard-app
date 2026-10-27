@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -16,6 +15,7 @@ import '../models/table_element.dart';
 import '../models/mind_map_element.dart';
 import '../services/document_import_service.dart';
 import '../services/ppt_conversion_service.dart';
+import 'package:path_provider/path_provider.dart';
 import 'table_picker_dialog.dart';
 import 'periodic_table_dialog.dart';
 
@@ -73,8 +73,8 @@ class WhiteboardToolbar extends StatelessWidget {
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 150),
       pageBuilder: (context, animation, secondaryAnimation) {
-        const double dialogWidth = 330.0;
-        const double dialogHeight = 265.0;
+        const double dialogWidth = 370.0;
+        const double dialogHeight = 285.0;
 
         final screenSize = MediaQuery.of(context).size;
         double left =
@@ -175,54 +175,81 @@ class WhiteboardToolbar extends StatelessWidget {
                             ),
                             const SizedBox(height: 8),
 
-                            // 2. Compact Pen Style Selector
+                            // 2. Compact Pen Style Selector (Column Layout)
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                _PenTypeOption(
-                                  label: 'Pen',
-                                  icon: LucideIcons.pencil,
-                                  color: Colors.blue,
-                                  isSelected:
-                                      provider.currentPenType == PenType.pen,
-                                  onTap: () {
-                                    provider.setPenType(PenType.pen);
-                                    setDialogState(() {});
-                                  },
+                                Expanded(
+                                  child: _PenTypeOption(
+                                    label: 'Pen',
+                                    icon: LucideIcons.pencil,
+                                    color: Colors.blue,
+                                    isSelected:
+                                        provider.currentPenType == PenType.pen,
+                                    onTap: () {
+                                      provider.setPenType(PenType.pen);
+                                      setDialogState(() {});
+                                    },
+                                  ),
                                 ),
-                                _PenTypeOption(
-                                  label: 'Fountain',
-                                  icon: LucideIcons.penTool,
-                                  color: Colors.purple,
-                                  isSelected:
-                                      provider.currentPenType ==
-                                      PenType.fountainPen,
-                                  onTap: () {
-                                    provider.setPenType(PenType.fountainPen);
-                                    setDialogState(() {});
-                                  },
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: _PenTypeOption(
+                                    label: 'Fountain',
+                                    icon: LucideIcons.penTool,
+                                    color: Colors.purple,
+                                    isSelected:
+                                        provider.currentPenType ==
+                                        PenType.fountainPen,
+                                    onTap: () {
+                                      provider.setPenType(PenType.fountainPen);
+                                      setDialogState(() {});
+                                    },
+                                  ),
                                 ),
-                                _PenTypeOption(
-                                  label: 'Brush',
-                                  icon: LucideIcons.paintbrush,
-                                  color: Colors.orange,
-                                  isSelected:
-                                      provider.currentPenType == PenType.brush,
-                                  onTap: () {
-                                    provider.setPenType(PenType.brush);
-                                    setDialogState(() {});
-                                  },
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: _PenTypeOption(
+                                    label: 'Brush',
+                                    icon: LucideIcons.paintbrush,
+                                    color: Colors.orange,
+                                    isSelected:
+                                        provider.currentPenType ==
+                                        PenType.brush,
+                                    onTap: () {
+                                      provider.setPenType(PenType.brush);
+                                      setDialogState(() {});
+                                    },
+                                  ),
                                 ),
-                                _PenTypeOption(
-                                  label: 'Marker',
-                                  icon: LucideIcons.highlighter,
-                                  color: Colors.green,
-                                  isSelected:
-                                      provider.currentPenType == PenType.marker,
-                                  onTap: () {
-                                    provider.setPenType(PenType.marker);
-                                    setDialogState(() {});
-                                  },
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: _PenTypeOption(
+                                    label: 'Marker',
+                                    icon: LucideIcons.highlighter,
+                                    color: Colors.green,
+                                    isSelected:
+                                        provider.currentPenType ==
+                                        PenType.marker,
+                                    onTap: () {
+                                      provider.setPenType(PenType.marker);
+                                      setDialogState(() {});
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: _PenTypeOption(
+                                    label: 'Smart',
+                                    icon: LucideIcons.wand2,
+                                    color: const Color(0xFF00C8AC),
+                                    isSelected:
+                                        provider.currentPenType ==
+                                        PenType.smartPen,
+                                    onTap: () {
+                                      provider.setPenType(PenType.smartPen);
+                                      setDialogState(() {});
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
@@ -1159,113 +1186,191 @@ class WhiteboardToolbar extends StatelessWidget {
     WhiteboardProvider provider,
   ) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final screenSize = MediaQuery.of(context).size;
 
     // Pre-warm Cloud Run server concurrently to eliminate cold-start delay
     PptConversionService.preWarmServer();
 
     try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx'],
-      );
+      // Use FileType.any so OEM panel file managers do NOT receive complex EXTRA_MIME_TYPES
+      // which causes them to switch into multi-select or highlight-only mode.
+      final result = await FilePicker.pickFiles(type: FileType.any);
 
-      if (result != null && result.files.single.path != null) {
-        final file = result.files.single;
-        final statusNotifier = ValueNotifier<String>("Preparing document...");
-        final progressNotifier = ValueNotifier<double>(0.0);
+      if (result == null || result.files.isEmpty) {
+        // User cancelled or panel dismissed
+        return;
+      }
 
-        // Show live progress dialog during slide extraction
-        if (context.mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogContext) => PopScope(
-              canPop: false,
-              child: AlertDialog(
-                backgroundColor: const Color(0xFF1E1E1E),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                content: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: Colors.blueAccent),
-                      const SizedBox(height: 20),
-                      ValueListenableBuilder<String>(
-                        valueListenable: statusNotifier,
-                        builder: (context, status, _) => Text(
-                          status,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ValueListenableBuilder<double>(
-                        valueListenable: progressNotifier,
-                        builder: (context, progress, _) =>
-                            LinearProgressIndicator(
-                              value: progress > 0 ? progress : null,
-                              backgroundColor: Colors.white12,
-                              color: Colors.blueAccent,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+      final picked = result.files.single;
+      final fileName = picked.name;
+      final ext =
+          (picked.extension ??
+                  (fileName.contains('.') ? fileName.split('.').last : ''))
+              .toLowerCase();
+
+      const allowedExts = ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx'];
+      if (!allowedExts.contains(ext)) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFD97706),
+            content: Text(
+              'Unsupported format: .$ext. Please select a .pdf, .ppt, or .pptx file.',
             ),
-          );
-        }
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
 
-        try {
-          final importService = DocumentImportService();
-          final pages = await importService.importDocumentToBoardPages(
-            file: File(file.path!),
-            fileName: file.name,
-            targetScreenSize: screenSize,
-            bottomToolbarHeight: 65.0,
-            onProgress: (current, total, status) {
-              statusNotifier.value = status;
-              progressNotifier.value = current / total.toDouble();
-            },
-          );
-
-          if (context.mounted) {
-            Navigator.of(
-              context,
-              rootNavigator: true,
-            ).pop(); // Close progress dialog
-          }
-
-          if (pages.isNotEmpty) {
-            provider.importPages(pages);
-          }
-        } catch (e) {
-          if (context.mounted) {
-            Navigator.of(
-              context,
-              rootNavigator: true,
-            ).pop(); // Close progress dialog
-          }
-          scaffoldMessenger.showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.redAccent,
-              content: Text('Failed to import ${file.name}: $e'),
-              duration: const Duration(seconds: 4),
-            ),
-          );
+      File? docFile;
+      if (picked.path != null && picked.path!.isNotEmpty) {
+        final f = File(picked.path!);
+        if (f.existsSync()) {
+          docFile = f;
         }
       }
+
+      // Fallback: If path is null due to Scoped Storage / content URI restriction
+      if (docFile == null && picked.bytes != null) {
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File(
+          '${tempDir.path}/picked_${DateTime.now().millisecondsSinceEpoch}_$fileName',
+        );
+        await tempFile.writeAsBytes(picked.bytes!);
+        docFile = tempFile;
+      }
+
+      if (docFile == null) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text('Could not access the selected file: $fileName'),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
+      if (context.mounted) {
+        await _processImportFile(
+          context: context,
+          provider: provider,
+          file: docFile,
+          fileName: fileName,
+        );
+      }
     } catch (e) {
-      debugPrint("Error picking document: $e");
+      debugPrint("Error picking document via system picker: $e");
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text('File manager error: $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _processImportFile({
+    required BuildContext context,
+    required WhiteboardProvider provider,
+    required File file,
+    required String fileName,
+  }) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final screenSize = MediaQuery.of(context).size;
+
+    // Pre-warm Cloud Run server concurrently to eliminate cold-start delay
+    PptConversionService.preWarmServer();
+
+    final statusNotifier = ValueNotifier<String>("Preparing document...");
+    final progressNotifier = ValueNotifier<double>(0.0);
+
+    // Show live progress dialog during slide extraction
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: const Color(0xFF1E1E1E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            content: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Colors.blueAccent),
+                  const SizedBox(height: 20),
+                  ValueListenableBuilder<String>(
+                    valueListenable: statusNotifier,
+                    builder: (context, status, _) => Text(
+                      status,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ValueListenableBuilder<double>(
+                    valueListenable: progressNotifier,
+                    builder: (context, progress, _) => LinearProgressIndicator(
+                      value: progress > 0 ? progress : null,
+                      backgroundColor: Colors.white12,
+                      color: Colors.blueAccent,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    try {
+      final importService = DocumentImportService();
+      final pages = await importService.importDocumentToBoardPages(
+        file: file,
+        fileName: fileName,
+        targetScreenSize: screenSize,
+        bottomToolbarHeight: 65.0,
+        onProgress: (current, total, status) {
+          statusNotifier.value = status;
+          progressNotifier.value = current / total.toDouble();
+        },
+      );
+
+      if (context.mounted) {
+        Navigator.of(
+          context,
+          rootNavigator: true,
+        ).pop(); // Close progress dialog
+      }
+
+      if (pages.isNotEmpty) {
+        provider.importPages(pages);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(
+          context,
+          rootNavigator: true,
+        ).pop(); // Close progress dialog
+      }
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text('Failed to import $fileName: $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -1459,7 +1564,6 @@ class _ToolButton extends StatelessWidget {
   final bool isActive;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final Color? color;
   final double iconSize;
 
   const _ToolButton({
@@ -1469,7 +1573,6 @@ class _ToolButton extends StatelessWidget {
     required this.isActive,
     required this.onTap,
     required this.iconSize,
-    this.color,
     this.onLongPress,
   });
 
@@ -1478,7 +1581,6 @@ class _ToolButton extends StatelessWidget {
     final bool isEnabled = onTap != null;
 
     Color defaultIconColor =
-        color ??
         switch (label) {
           'Pen' => const Color(0xFF0EA5E9),
           'Eraser' => const Color(0xFFF97316),
@@ -1613,24 +1715,28 @@ class _PenTypeOption extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.15) : Colors.grey[100],
+          color: isSelected ? color.withValues(alpha: 0.15) : Colors.grey[100],
           border: Border.all(
             color: isSelected ? color : Colors.grey[300]!,
             width: isSelected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Row(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 4),
+            Icon(icon, size: 18, color: color),
+            const SizedBox(height: 3),
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                 color: isSelected ? color : Colors.black87,
               ),
@@ -1814,3 +1920,4 @@ class _ToolboxOptionItem extends StatelessWidget {
     );
   }
 }
+

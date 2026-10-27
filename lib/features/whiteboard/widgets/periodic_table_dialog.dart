@@ -20,6 +20,7 @@ class PeriodicTableDialog extends StatefulWidget {
     );
   }
 
+
   @override
   State<PeriodicTableDialog> createState() => _PeriodicTableDialogState();
 }

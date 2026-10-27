@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
@@ -57,11 +59,12 @@ class _SplitScreenViewState extends State<SplitScreenView> {
   ];
 
   // 3 Thickness options matching user requirement & image
-  static const List<({double strokeWidth, double dotSize})> _thicknessOptions = [
-    (strokeWidth: 3.0, dotSize: 4.0), // Thin
-    (strokeWidth: 6.0, dotSize: 7.0), // Medium
-    (strokeWidth: 10.0, dotSize: 10.0), // Thick
-  ];
+  static const List<({double strokeWidth, double dotSize})> _thicknessOptions =
+      [
+        (strokeWidth: 3.0, dotSize: 4.0), // Thin
+        (strokeWidth: 6.0, dotSize: 7.0), // Medium
+        (strokeWidth: 10.0, dotSize: 10.0), // Thick
+      ];
 
   // Per-column settings
   late List<int> _selectedColorIndices;
@@ -108,7 +111,9 @@ class _SplitScreenViewState extends State<SplitScreenView> {
         // On white / light backgrounds: avoid white pen (index 0)
         return index == 1 ? 3 : 1; // Col 0: Black, Col 1: Blue, etc.
       }
-      return index == 1 ? 1 : 0; // On dark backgrounds: Col 0: White, Col 1: Black
+      return index == 1
+          ? 1
+          : 0; // On dark backgrounds: Col 0: White, Col 1: Black
     });
     _selectedThicknessIndices = List.filled(count, 1); // Default medium
     _columnStrokes = List.generate(count, (_) => <_SplitStroke>[]);
@@ -149,9 +154,10 @@ class _SplitScreenViewState extends State<SplitScreenView> {
                 final double x = e.localPosition.dx;
                 final int colIndex = (x / colWidth).clamp(0, count - 1).floor();
 
-                // Palm detection
-                final bool isPalm = (e.radiusMajor >= 12.0 || e.size >= 0.08);
-                if (isPalm) {
+                // Palm and backhand detection
+                final double r = max(e.radiusMajor, e.radiusMinor);
+                final bool isPalmOrBackhand = (r >= 6.5 || e.size >= 0.045);
+                if (isPalmOrBackhand) {
                   _activePalms[e.pointer] = e.localPosition;
                   _eraseAt(colIndex, e.localPosition, 45.0);
                   setState(() {});
@@ -174,8 +180,9 @@ class _SplitScreenViewState extends State<SplitScreenView> {
               onPointerMove: (e) {
                 if (_activePalms.containsKey(e.pointer)) {
                   _activePalms[e.pointer] = e.localPosition;
-                  final int colIndex =
-                      (e.localPosition.dx / colWidth).clamp(0, count - 1).floor();
+                  final int colIndex = (e.localPosition.dx / colWidth)
+                      .clamp(0, count - 1)
+                      .floor();
                   _eraseAt(colIndex, e.localPosition, 45.0);
                   setState(() {});
                   return;
@@ -214,16 +221,37 @@ class _SplitScreenViewState extends State<SplitScreenView> {
                 _activePointers.remove(e.pointer);
                 setState(() {});
               },
-              child: CustomPaint(
-                painter: _SplitScreenCanvasPainter(
-                  backgroundColor: provider.canvasBackgroundColor,
-                  gridType: provider.canvasGridType,
-                  splitCount: count,
-                  columnStrokes: _columnStrokes,
-                  activePointers: _activePointers.values.toList(),
-                  activePalms: _activePalms.values.toList(),
+              child: Container(
+                decoration:
+                    provider.canvasBackgroundImagePath != null &&
+                        File(provider.canvasBackgroundImagePath!).existsSync()
+                    ? BoxDecoration(
+                        color: provider.canvasBackgroundColor,
+                        image: DecorationImage(
+                          image: FileImage(
+                            File(provider.canvasBackgroundImagePath!),
+                          ),
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : BoxDecoration(color: provider.canvasBackgroundColor),
+                child: CustomPaint(
+                  painter: _SplitScreenCanvasPainter(
+                    backgroundColor:
+                        provider.canvasBackgroundImagePath != null &&
+                            File(
+                              provider.canvasBackgroundImagePath!,
+                            ).existsSync()
+                        ? Colors.transparent
+                        : provider.canvasBackgroundColor,
+                    gridType: provider.canvasGridType,
+                    splitCount: count,
+                    columnStrokes: _columnStrokes,
+                    activePointers: _activePointers.values.toList(),
+                    activePalms: _activePalms.values.toList(),
+                  ),
+                  child: const SizedBox.expand(),
                 ),
-                child: const SizedBox.expand(),
               ),
             ),
           ),

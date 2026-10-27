@@ -15,6 +15,7 @@ class ChemicalElementDrawer {
       element.size.height,
     );
 
+
     final double scaleX = element.size.width / 150.0;
     final double scaleY = element.size.height / 175.0;
     final double s = min(scaleX, scaleY).clamp(0.4, 4.0);

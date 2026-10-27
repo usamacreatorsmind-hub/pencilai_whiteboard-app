@@ -20,6 +20,7 @@ class ProtractorAngleShape {
   /// Optional second stroke: square corner for 90°, small arc for other angles.
   final List<Offset> markerPoints;
 
+
   const ProtractorAngleShape({
     required this.degrees,
     required this.vertex,

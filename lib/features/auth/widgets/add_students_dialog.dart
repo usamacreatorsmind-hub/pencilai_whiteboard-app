@@ -10,6 +10,7 @@ class AddStudentsDialog extends StatelessWidget {
     return AddStudentManuallyDialog.show(context);
   }
 
+
   @override
   Widget build(BuildContext context) {
     return const AddStudentManuallyDialog();

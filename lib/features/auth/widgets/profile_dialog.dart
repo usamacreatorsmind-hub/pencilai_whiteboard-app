@@ -20,6 +20,7 @@ class ProfileDialog extends StatefulWidget {
           child: Padding(padding: EdgeInsets.only(left: 132, bottom: 70), child: ProfileDialog()),
         );
       },
+
       transitionBuilder: (context, anim1, anim2, child) {
         return FadeTransition(
           opacity: anim1,

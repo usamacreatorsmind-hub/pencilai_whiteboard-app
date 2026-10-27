@@ -12,6 +12,7 @@ class LoginDialog extends StatefulWidget {
     return showDialog(context: context, barrierDismissible: false, builder: (context) => const LoginDialog());
   }
 
+
   @override
   State<LoginDialog> createState() => _LoginDialogState();
 }

@@ -8,6 +8,7 @@ import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
 import '../services/translation_service.dart';
 import '../state/whiteboard_provider.dart';
+import 'settings_dialog.dart';
 
 class TranslationDialog extends StatefulWidget {
   final WhiteboardProvider provider;
@@ -40,17 +41,27 @@ class _TranslationDialogState extends State<TranslationDialog> {
   @override
   void initState() {
     super.initState();
-    _targetLang = TranslationService.supportedLanguages.firstWhere(
-      (l) => l.code == 'hi',
-      orElse: () => TranslationService.supportedLanguages[0],
-    );
+    final downloaded = widget.provider.downloadedTranslationLanguageItems;
+    if (downloaded.isNotEmpty) {
+      _targetLang = downloaded.firstWhere(
+        (l) => l.code == 'hi',
+        orElse: () => downloaded.first,
+      );
+    } else {
+      _targetLang = TranslationService.supportedLanguages.firstWhere(
+        (l) => l.code == 'hi',
+        orElse: () => TranslationService.supportedLanguages[0],
+      );
+    }
     _extractAndTranslate();
     _checkModelDownloads();
   }
 
   Future<void> _checkModelDownloads() async {
     for (var lang in TranslationService.supportedLanguages) {
-      final downloaded = await TranslationService().isModelDownloaded(lang.mlKitLanguage);
+      final downloaded =
+          widget.provider.isTranslationLanguageDownloaded(lang.code) ||
+          await TranslationService().isModelDownloaded(lang.mlKitLanguage);
       if (mounted) {
         setState(() {
           _downloadedModels[lang.code] = downloaded;
@@ -63,7 +74,7 @@ class _TranslationDialogState extends State<TranslationDialog> {
     setState(() {
       _isDownloading[lang.code] = true;
     });
-    final success = await TranslationService().downloadLanguageModel(lang.mlKitLanguage);
+    final success = await widget.provider.downloadTranslationLanguage(lang);
     if (mounted) {
       setState(() {
         _isDownloading[lang.code] = false;
@@ -92,7 +103,9 @@ class _TranslationDialogState extends State<TranslationDialog> {
 
     String extracted = '';
     final selectedIds = widget.provider.selectedElementIds;
-    final selectedElements = widget.provider.currentPage.elements.where((e) => selectedIds.contains(e.id)).toList();
+    final selectedElements = widget.provider.currentPage.elements
+        .where((e) => selectedIds.contains(e.id))
+        .toList();
 
     for (var el in selectedElements) {
       if (el is TextElement) {
@@ -105,10 +118,16 @@ class _TranslationDialogState extends State<TranslationDialog> {
     }
 
     if (extracted.isEmpty && selectedElements.isNotEmpty) {
-      final imageBytes = await BoardStorageService().captureSelectedElementsBytes(selectedElements);
+      final imageBytes = await BoardStorageService()
+          .captureSelectedElementsBytes(selectedElements);
       if (imageBytes != null) {
-        final recognized = await AiService().recognizeHandwriting(imageBytes: imageBytes);
-        if (recognized.isNotEmpty && !recognized.startsWith('Error') && !recognized.startsWith('⚠️')) {
+        final recognized = await AiService().recognizeHandwriting(
+          imageBytes: imageBytes,
+          language: widget.provider.selectedHandwritingLanguage,
+        );
+        if (recognized.isNotEmpty &&
+            !recognized.startsWith('Error') &&
+            !recognized.startsWith('⚠️')) {
           extracted = recognized;
         }
       }
@@ -128,7 +147,11 @@ class _TranslationDialogState extends State<TranslationDialog> {
 
     _originalText = extracted.trim();
 
-    final translated = await TranslationService().translateText(text: _originalText, sourceLang: _sourceLang, targetLang: _targetLang);
+    final translated = await TranslationService().translateText(
+      text: _originalText,
+      sourceLang: _sourceLang,
+      targetLang: _targetLang,
+    );
 
     if (mounted) {
       setState(() {
@@ -143,7 +166,11 @@ class _TranslationDialogState extends State<TranslationDialog> {
     if (_originalText.isEmpty) return;
     setState(() => _isTranslating = true);
 
-    final translated = await TranslationService().translateText(text: _originalText, sourceLang: _sourceLang, targetLang: _targetLang);
+    final translated = await TranslationService().translateText(
+      text: _originalText,
+      sourceLang: _sourceLang,
+      targetLang: _targetLang,
+    );
 
     if (mounted) {
       setState(() {
@@ -157,9 +184,13 @@ class _TranslationDialogState extends State<TranslationDialog> {
     if (_translatedText.isEmpty) return;
 
     final selectedIds = widget.provider.selectedElementIds;
-    final selectedElements = widget.provider.currentPage.elements.where((e) => selectedIds.contains(e.id)).toList();
+    final selectedElements = widget.provider.currentPage.elements
+        .where((e) => selectedIds.contains(e.id))
+        .toList();
 
-    Rect bounds = selectedElements.isNotEmpty ? selectedElements[0].getRawBounds() : const Rect.fromLTWH(100, 100, 150, 50);
+    Rect bounds = selectedElements.isNotEmpty
+        ? selectedElements[0].getRawBounds()
+        : const Rect.fromLTWH(100, 100, 150, 50);
 
     Color color = Colors.black;
     if (selectedElements.isNotEmpty) {
@@ -168,7 +199,9 @@ class _TranslationDialogState extends State<TranslationDialog> {
       if (first is TextElement) color = first.color;
     }
 
-    final newPosition = replace ? Offset(bounds.left, bounds.top) : Offset(bounds.left, bounds.bottom + 16);
+    final newPosition = replace
+        ? Offset(bounds.left, bounds.top)
+        : Offset(bounds.left, bounds.bottom + 16);
 
     final translatedElement = TextElement(
       id: const Uuid().v4(),
@@ -177,7 +210,9 @@ class _TranslationDialogState extends State<TranslationDialog> {
       color: color,
       fontSize: (bounds.height * 0.7).clamp(20.0, 72.0),
       size: Size(bounds.width * 1.2, bounds.height * 1.1),
-      docPage: widget.provider.isDocumentOverlayOpen ? widget.provider.overlayCurrentPage : null,
+      docPage: widget.provider.isDocumentOverlayOpen
+          ? widget.provider.overlayCurrentPage
+          : null,
     );
 
     if (replace) {
@@ -206,13 +241,24 @@ class _TranslationDialogState extends State<TranslationDialog> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: const Color(0xFF0D9488).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(LucideIcons.languages, color: Color(0xFF2DD4BF), size: 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D9488).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    LucideIcons.languages,
+                    color: Color(0xFF2DD4BF),
+                    size: 18,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 const Text(
                   'Translate Text',
-                  style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -225,6 +271,121 @@ class _TranslationDialogState extends State<TranslationDialog> {
             ),
             const SizedBox(height: 14),
 
+            // Fast Downloaded Models Quick Bar
+            Builder(
+              builder: (context) {
+                final downloadedLangs = widget.provider.downloadedTranslationLanguageItems;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(LucideIcons.zap, size: 14, color: Color(0xFF2DD4BF)),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Downloaded Models (${downloadedLangs.length})',
+                              style: const TextStyle(
+                                color: Color(0xFF2DD4BF),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        InkWell(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            SettingsDialog.show(context, initialTab: SettingsTab.translationLanguage);
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Manage',
+                                  style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontWeight: FontWeight.w600),
+                                ),
+                                SizedBox(width: 2),
+                                Icon(LucideIcons.externalLink, size: 11, color: Color(0xFF38BDF8)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (downloadedLangs.isNotEmpty)
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: downloadedLangs.map((lang) {
+                            final isSelected = _targetLang.code == lang.code;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6.0),
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() => _targetLang = lang);
+                                  _updateTranslation();
+                                },
+                                borderRadius: BorderRadius.circular(14),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? const Color(0xFF0D9488) : const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isSelected ? const Color(0xFF2DD4BF) : Colors.white24,
+                                      width: 1.2,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isSelected ? LucideIcons.check : LucideIcons.zap,
+                                        size: 11,
+                                        color: isSelected ? Colors.white : const Color(0xFF2DD4BF),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        lang.nativeName,
+                                        style: TextStyle(
+                                          color: isSelected ? Colors.white : Colors.white70,
+                                          fontSize: 11.5,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: const Text(
+                          'No models downloaded yet. Tap "Manage" to download offline translation models.',
+                          style: TextStyle(color: Colors.grey, fontSize: 11),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
+                );
+              },
+            ),
+
             // Language Selector Row (Source -> Target)
             Row(
               children: [
@@ -235,11 +396,18 @@ class _TranslationDialogState extends State<TranslationDialog> {
                     children: [
                       const Text(
                         'Source Language',
-                        style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0F172A),
                           borderRadius: BorderRadius.circular(10),
@@ -250,19 +418,33 @@ class _TranslationDialogState extends State<TranslationDialog> {
                             value: _sourceLang,
                             dropdownColor: const Color(0xFF0F172A),
                             isExpanded: true,
-                            icon: const Icon(LucideIcons.chevronDown, color: Colors.grey, size: 16),
+                            icon: const Icon(
+                              LucideIcons.chevronDown,
+                              color: Colors.grey,
+                              size: 16,
+                            ),
                             items: [
                               const DropdownMenuItem<SupportedLanguage?>(
                                 value: null,
                                 child: Text(
                                   'Auto-Detect',
-                                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                               ...TranslationService.supportedLanguages.map(
                                 (l) => DropdownMenuItem<SupportedLanguage?>(
                                   value: l,
-                                  child: Text('${l.nativeName} (${l.name})', style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                  child: Text(
+                                    '${l.nativeName} (${l.name})',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
@@ -279,7 +461,11 @@ class _TranslationDialogState extends State<TranslationDialog> {
 
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                  child: Icon(LucideIcons.arrowRight, color: Colors.grey, size: 16),
+                  child: Icon(
+                    LucideIcons.arrowRight,
+                    color: Colors.grey,
+                    size: 16,
+                  ),
                 ),
 
                 // Target Language Box
@@ -289,25 +475,43 @@ class _TranslationDialogState extends State<TranslationDialog> {
                     children: [
                       const Text(
                         'Target Language',
-                        style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF0F172A),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFF0D9488), width: 1.2),
+                          border: Border.all(
+                            color: const Color(0xFF0D9488),
+                            width: 1.2,
+                          ),
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<SupportedLanguage>(
                             value: _targetLang,
                             dropdownColor: const Color(0xFF0F172A),
                             isExpanded: true,
-                            icon: const Icon(LucideIcons.chevronDown, color: Color(0xFF2DD4BF), size: 16),
-                            items: TranslationService.supportedLanguages.map((l) {
-                              final isDownloaded = _downloadedModels[l.code] ?? false;
-                              final isDownloading = _isDownloading[l.code] ?? false;
+                            icon: const Icon(
+                              LucideIcons.chevronDown,
+                              color: Color(0xFF2DD4BF),
+                              size: 16,
+                            ),
+                            items: TranslationService.supportedLanguages.map((
+                              l,
+                            ) {
+                              final isDownloaded =
+                                  _downloadedModels[l.code] ?? false;
+                              final isDownloading =
+                                  _isDownloading[l.code] ?? false;
 
                               return DropdownMenuItem<SupportedLanguage>(
                                 value: l,
@@ -316,24 +520,40 @@ class _TranslationDialogState extends State<TranslationDialog> {
                                     Expanded(
                                       child: Text(
                                         l.nativeName,
-                                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                     if (isDownloading)
                                       const SizedBox(
                                         width: 12,
                                         height: 12,
-                                        child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.teal),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.8,
+                                          color: Colors.teal,
+                                        ),
                                       )
                                     else if (!isDownloaded)
                                       IconButton(
                                         padding: EdgeInsets.zero,
                                         constraints: const BoxConstraints(),
-                                        icon: const Icon(LucideIcons.download, color: Colors.grey, size: 14),
-                                        onPressed: () => _downloadLanguagePack(l),
+                                        icon: const Icon(
+                                          LucideIcons.download,
+                                          color: Colors.grey,
+                                          size: 14,
+                                        ),
+                                        onPressed: () =>
+                                            _downloadLanguagePack(l),
                                       )
                                     else
-                                      const Icon(LucideIcons.check, color: Color(0xFF10B981), size: 15),
+                                      const Icon(
+                                        LucideIcons.check,
+                                        color: Color(0xFF10B981),
+                                        size: 15,
+                                      ),
                                   ],
                                 ),
                               );
@@ -369,20 +589,38 @@ class _TranslationDialogState extends State<TranslationDialog> {
                     children: [
                       Expanded(
                         child: Text(
-                          _isLoadingText ? 'Reading text...' : 'Original: "$_originalText"',
-                          style: const TextStyle(color: Colors.grey, fontSize: 11),
+                          _isLoadingText
+                              ? 'Reading text...'
+                              : 'Original: "$_originalText"',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 11,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (_isTranslating)
-                        const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.8, color: Color(0xFF2DD4BF))),
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.8,
+                            color: Color(0xFF2DD4BF),
+                          ),
+                        ),
                     ],
                   ),
                   const Divider(color: Colors.white12, height: 16),
                   Text(
-                    _translatedText.isEmpty ? 'Translating...' : _translatedText,
-                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                    _translatedText.isEmpty
+                        ? 'Translating...'
+                        : _translatedText,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -398,11 +636,18 @@ class _TranslationDialogState extends State<TranslationDialog> {
                       foregroundColor: Colors.white70,
                       side: const BorderSide(color: Colors.white24),
                       padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
-                    onPressed: _translatedText.isEmpty ? null : () => _applyTranslation(replace: false),
+                    onPressed: _translatedText.isEmpty
+                        ? null
+                        : () => _applyTranslation(replace: false),
                     icon: const Icon(LucideIcons.plus, size: 14),
-                    label: const Text('Add as New Note', style: TextStyle(fontSize: 12)),
+                    label: const Text(
+                      'Add as New Note',
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -412,11 +657,21 @@ class _TranslationDialogState extends State<TranslationDialog> {
                       backgroundColor: const Color(0xFF0D9488),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
-                    onPressed: _translatedText.isEmpty ? null : () => _applyTranslation(replace: true),
+                    onPressed: _translatedText.isEmpty
+                        ? null
+                        : () => _applyTranslation(replace: true),
                     icon: const Icon(LucideIcons.check, size: 14),
-                    label: const Text('Replace Original', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    label: const Text(
+                      'Replace Original',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -427,3 +682,4 @@ class _TranslationDialogState extends State<TranslationDialog> {
     );
   }
 }
+

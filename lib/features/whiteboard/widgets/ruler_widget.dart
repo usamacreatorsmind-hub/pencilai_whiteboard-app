@@ -20,7 +20,7 @@ class RulerWidget extends StatefulWidget {
   final VoidCallback onClose;
   final ValueChanged<List<Offset>>? onDrawLine;
 
-  /// Calibrated value (saved earlier). Null => default use hoga.
+  /// Calibrated value (saved earlier). Null => default use hoga
   final double? initialPxPerCm;
 
   /// Panel ka diagonal (65 / 75 / 86). initialPxPerCm na ho to isse estimate hota hai.
