@@ -35,7 +35,6 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   static const int _kNibDecideMs = 150; // initial voting window
   static const int _kNibThickStreak =
   3; // consecutive thick readings to upgrade later
-
   // displayElements memoization
   Iterable<BoardElement>? _displaySource;
   List<BoardElement> _displayCache = const [];
