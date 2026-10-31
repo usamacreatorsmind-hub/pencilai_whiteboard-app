@@ -462,13 +462,15 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.any,
+        withReadStream: true,
       );
       if (result != null && result.files.isNotEmpty) {
         final picked = result.files.single;
         final fileName = picked.name;
-        final ext = (picked.extension ??
-                (fileName.contains('.') ? fileName.split('.').last : ''))
-            .toLowerCase();
+        final ext =
+            (picked.extension ??
+                    (fileName.contains('.') ? fileName.split('.').last : ''))
+                .toLowerCase();
 
         const allowedExts = [
           'jpg',
@@ -481,12 +483,13 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
           'docx',
         ];
 
-
         if (!allowedExts.contains(ext)) {
           scaffoldMessenger.showSnackBar(
             SnackBar(
               backgroundColor: const Color(0xFFD97706),
-              content: Text('Unsupported format: .$ext. Please select an image or document.'),
+              content: Text(
+                'Unsupported format: .$ext. Please select an image or document.',
+              ),
               duration: const Duration(seconds: 4),
             ),
           );
@@ -494,13 +497,37 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
         }
 
         String? filePath = picked.path;
+        if (filePath != null) {
+          try {
+            if (!File(filePath).existsSync()) {
+              filePath = null;
+            }
+          } catch (_) {
+            filePath = null;
+          }
+        }
+
+        if (filePath == null && picked.readStream != null) {
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File(
+            '${tempDir.path}/opened_${DateTime.now().millisecondsSinceEpoch}_$fileName',
+          );
+          final sink = tempFile.openWrite();
+          await picked.readStream!.pipe(sink);
+          if (tempFile.existsSync()) {
+            filePath = tempFile.path;
+          }
+        }
+
         if (filePath == null && picked.bytes != null) {
           final tempDir = await getTemporaryDirectory();
           final tempFile = File(
             '${tempDir.path}/opened_${DateTime.now().millisecondsSinceEpoch}_$fileName',
           );
           await tempFile.writeAsBytes(picked.bytes!);
-          filePath = tempFile.path;
+          if (tempFile.existsSync()) {
+            filePath = tempFile.path;
+          }
         }
 
         if (filePath == null || !File(filePath).existsSync()) {
@@ -745,7 +772,9 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                     builder: (context, provider, _) {
                       final hasCustomBg =
                           provider.canvasBackgroundImagePath != null &&
-                          File(provider.canvasBackgroundImagePath!).existsSync();
+                          File(
+                            provider.canvasBackgroundImagePath!,
+                          ).existsSync();
 
                       return RepaintBoundary(
                         key: _canvasKey,

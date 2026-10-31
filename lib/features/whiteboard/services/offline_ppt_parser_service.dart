@@ -26,7 +26,7 @@ class OfflinePptParserService {
     void Function(int slideIndex, String imagePath)? onSlideBackgroundConverted,
   }) async {
     final sw = targetScreenSize?.width ?? 1280.0;
-    final sh = (targetScreenSize?.height ?? 720.0) - 65.0; // Usable height minus bottom toolbar
+    final sh = targetScreenSize?.height ?? 720.0;
 
     if (!await pptxFile.exists()) {
       throw Exception('PPTX file does not exist at ${pptxFile.path}');
@@ -291,22 +291,10 @@ class OfflinePptParserService {
   ) {
     final List<BoardPage> pages = [];
     for (int i = 0; i < imagePaths.length; i++) {
-      double slideRatio = slideW / slideH;
-      double boardRatio = boardW / boardH;
-      double w, h;
-      if (slideRatio > boardRatio) {
-        w = boardW;
-        h = boardW / slideRatio;
-      } else {
-        h = boardH;
-        w = boardH * slideRatio;
-      }
-      Offset pos = Offset((boardW - w) / 2, (boardH - h) / 2);
-
       final imageElement = ImageElement(
         id: _uuid.v4(),
-        position: pos,
-        size: Size(w, h),
+        position: Offset.zero,
+        size: Size(boardW, boardH),
         imageUrl: imagePaths[i],
         isDocumentSlide: true,
       );

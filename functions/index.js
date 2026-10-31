@@ -33,6 +33,11 @@ exports.sendMsg91Otp = onRequest({region: "asia-south1", cors: true, memory: "25
       cleanMobile = "91" + cleanMobile;
     }
 
+    // Bypass for Play Store test review number
+    if (cleanMobile.endsWith("9973725718")) {
+      return res.status(200).json({success: true, message: "OTP sent (Test Bypass)", data: {type: "success"}});
+    }
+
     const url = `https://control.msg91.com/api/v5/otp?template_id=${MSG91_TEMPLATE_ID}&mobile=${cleanMobile}`;
     const response = await fetch(url, {
       method: "POST",
@@ -62,6 +67,16 @@ exports.verifyMsg91Otp = onRequest({region: "asia-south1", cors: true, memory: "
     let cleanMobile = mobile.toString().replace(/\D/g, "");
     if (cleanMobile.length === 10) {
       cleanMobile = "91" + cleanMobile;
+    }
+
+    // Bypass for Play Store test review number
+    if (cleanMobile.endsWith("9973725718")) {
+      if (otp.toString().trim() === "1234") {
+        const userUid = `phone_${cleanMobile}`;
+        return res.status(200).json({success: true, uid: userUid, mobile: cleanMobile, data: {type: "success"}});
+      } else {
+        return res.status(400).json({success: false, error: "Invalid OTP. Use 1234 for test number."});
+      }
     }
 
     const url = `https://control.msg91.com/api/v5/otp/verify?otp=${otp}&mobile=${cleanMobile}`;
@@ -95,6 +110,11 @@ exports.resendMsg91Otp = onRequest({region: "asia-south1", cors: true, memory: "
     let cleanMobile = mobile.toString().replace(/\D/g, "");
     if (cleanMobile.length === 10) {
       cleanMobile = "91" + cleanMobile;
+    }
+
+    // Bypass for Play Store test review number
+    if (cleanMobile.endsWith("9973725718")) {
+      return res.status(200).json({success: true, message: "OTP resent (Test Bypass)", data: {type: "success"}});
     }
 
     const url = `https://control.msg91.com/api/v5/otp/retry?retrytype=text&mobile=${cleanMobile}`;

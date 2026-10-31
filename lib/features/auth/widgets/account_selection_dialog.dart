@@ -15,7 +15,6 @@ class AccountSelectionDialog extends StatefulWidget {
     );
   }
 
-
   @override
   State<AccountSelectionDialog> createState() => _AccountSelectionDialogState();
 }
@@ -45,7 +44,9 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
     final screenSize = MediaQuery.of(context).size;
 
     return Dialog(
-      backgroundColor: const Color(0xFF232533), // Dark background matching screenshot
+      backgroundColor: const Color(
+        0xFF232533,
+      ), // Dark background matching screenshot
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
         side: BorderSide(color: Colors.white.withValues(alpha: 0.12), width: 1),
@@ -77,7 +78,11 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                       if (!_isSearching) ...[
                         const Text(
                           'Select your account',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         Row(
                           children: [
@@ -93,9 +98,15 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.08),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                 ),
-                                child: const Icon(LucideIcons.search, color: Colors.white70, size: 18),
+                                child: const Icon(
+                                  LucideIcons.search,
+                                  color: Colors.white70,
+                                  size: 18,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -107,9 +118,15 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.08),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                  ),
                                 ),
-                                child: const Icon(LucideIcons.x, color: Colors.white70, size: 18),
+                                child: const Icon(
+                                  LucideIcons.x,
+                                  color: Colors.white70,
+                                  size: 18,
+                                ),
                               ),
                             ),
                           ],
@@ -121,17 +138,30 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(21),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
                             ),
                             child: TextField(
                               controller: _searchController,
                               autofocus: true,
-                              onChanged: (val) => setState(() => _searchQuery = val),
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                              onChanged: (val) =>
+                                  setState(() => _searchQuery = val),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Search accounts...',
-                                hintStyle: const TextStyle(color: Colors.white54, fontSize: 13),
-                                prefixIcon: const Icon(LucideIcons.search, color: Colors.white54, size: 16),
+                                hintStyle: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 13,
+                                ),
+                                prefixIcon: const Icon(
+                                  LucideIcons.search,
+                                  color: Colors.white54,
+                                  size: 16,
+                                ),
                                 suffixIcon: GestureDetector(
                                   onTap: () {
                                     _searchController.clear();
@@ -140,10 +170,16 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                       _isSearching = false;
                                     });
                                   },
-                                  child: const Icon(LucideIcons.x, color: Colors.white70, size: 16),
+                                  child: const Icon(
+                                    LucideIcons.x,
+                                    color: Colors.white70,
+                                    size: 16,
+                                  ),
                                 ),
                                 border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 11,
+                                ),
                               ),
                             ),
                           ),
@@ -157,9 +193,15 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.08),
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
                             ),
-                            child: const Icon(LucideIcons.x, color: Colors.white70, size: 18),
+                            child: const Icon(
+                              LucideIcons.x,
+                              color: Colors.white70,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ],
@@ -170,7 +212,11 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                   // Section Label
                   const Text(
                     'Recent accounts',
-                    style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 16),
 
@@ -181,7 +227,10 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                       scrollDirection: Axis.horizontal,
                       children: [
                         // 1. Add Profile Item
-                        if (_searchQuery.isEmpty || 'add profile'.contains(_searchQuery.toLowerCase())) ...[
+                        if (_searchQuery.isEmpty ||
+                            'add profile'.contains(
+                              _searchQuery.toLowerCase(),
+                            )) ...[
                           GestureDetector(
                             onTap: () {
                               Navigator.of(context).pop();
@@ -195,27 +244,45 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                   height: 52,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
-                                    border: Border.all(color: const Color(0xFF38BDF8), width: 1.5),
+                                    color: const Color(
+                                      0xFF38BDF8,
+                                    ).withValues(alpha: 0.15),
+                                    border: Border.all(
+                                      color: const Color(0xFF38BDF8),
+                                      width: 1.5,
+                                    ),
                                   ),
-                                  child: const Icon(LucideIcons.userPlus, color: Color(0xFF38BDF8), size: 26),
+                                  child: const Icon(
+                                    LucideIcons.userPlus,
+                                    color: Color(0xFF38BDF8),
+                                    size: 26,
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 const Text(
                                   'Add Profile',
-                                  style: TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    color: Color(0xFF38BDF8),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                          if (filteredAccounts.isNotEmpty) const SizedBox(width: 24),
+                          if (filteredAccounts.isNotEmpty)
+                            const SizedBox(width: 24),
                         ],
 
                         // 2. Account Items with Delete Option
                         ...filteredAccounts.map((acc) {
                           String name = acc['name'] ?? 'User';
                           String initials = _getInitials(name);
-                          String uid = acc['uid'] ?? acc['phoneNumber'] ?? acc['name'] ?? '';
+                          String uid =
+                              acc['uid'] ??
+                              acc['phoneNumber'] ??
+                              acc['name'] ??
+                              '';
 
                           return Padding(
                             padding: const EdgeInsets.only(right: 24.0),
@@ -239,14 +306,22 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                         child: Center(
                                           child: Text(
                                             initials,
-                                            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                       ),
                                       const SizedBox(height: 8),
                                       Text(
                                         name,
-                                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -260,17 +335,41 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                       final confirm = await showDialog<bool>(
                                         context: context,
                                         builder: (ctx) => AlertDialog(
-                                          backgroundColor: const Color(0xFF1E1E1E),
-                                          title: const Text('Delete Profile', style: TextStyle(color: Colors.white)),
-                                          content: Text('Are you sure you want to delete profile "$name"?', style: const TextStyle(color: Colors.grey)),
+                                          backgroundColor: const Color(
+                                            0xFF1E1E1E,
+                                          ),
+                                          title: const Text(
+                                            'Delete Profile',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          content: Text(
+                                            'Are you sure you want to delete profile "$name"?',
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
                                           actions: [
                                             TextButton(
-                                              onPressed: () => Navigator.pop(ctx, false),
-                                              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: const Text(
+                                                'Cancel',
+                                                style: TextStyle(
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
                                             ),
                                             TextButton(
-                                              onPressed: () => Navigator.pop(ctx, true),
-                                              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: const Text(
+                                                'Delete',
+                                                style: TextStyle(
+                                                  color: Colors.red,
+                                                ),
+                                              ),
                                             ),
                                           ],
                                         ),
@@ -285,7 +384,11 @@ class _AccountSelectionDialogState extends State<AccountSelectionDialog> {
                                         shape: BoxShape.circle,
                                       ),
                                       padding: const EdgeInsets.all(4),
-                                      child: const Icon(LucideIcons.x, size: 10, color: Colors.white),
+                                      child: const Icon(
+                                        LucideIcons.x,
+                                        size: 10,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
                                 ),

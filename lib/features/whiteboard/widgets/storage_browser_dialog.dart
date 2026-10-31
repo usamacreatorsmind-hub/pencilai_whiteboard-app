@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class StorageLocation {
   final String title;
@@ -36,6 +37,8 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
   final List<StorageLocation> _locations = [];
   bool _isLoadingLocations = true;
   bool _isLoadingFiles = false;
+  bool _hasPermissionIssue = false;
+  String _docTypeFilter = 'all'; // 'all', 'ppt', 'pdf'
 
   Directory? _currentDir;
   List<FileSystemEntity> _currentEntities = [];
@@ -65,14 +68,36 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
   }
 
   Future<void> _loadStorageLocations() async {
-    setState(() => _isLoadingLocations = true);
+    setState(() {
+      _isLoadingLocations = true;
+      _hasPermissionIssue = false;
+    });
     final List<StorageLocation> locs = [];
+
+    // Ensure permissions on Android smart boards
+    if (Platform.isAndroid) {
+      try {
+        var manageGranted = await Permission.manageExternalStorage.isGranted;
+        if (!manageGranted) {
+          final res = await Permission.manageExternalStorage.request();
+          manageGranted = res.isGranted;
+        }
+        if (!manageGranted) {
+          final st = await Permission.storage.request();
+          if (!st.isGranted) {
+            _hasPermissionIssue = true;
+          }
+        }
+      } catch (e) {
+        debugPrint('Note: Storage permission check: $e');
+      }
+    }
 
     // 1. Check Android /storage directory for USB drives and external volumes
     try {
       final storageDir = Directory('/storage');
       if (storageDir.existsSync()) {
-        final entries = storageDir.listSync();
+        final entries = storageDir.listSync(followLinks: false);
         for (final entry in entries) {
           if (entry is Directory) {
             final name = entry.path.split('/').last;
@@ -98,15 +123,17 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
     try {
       final mntDir = Directory('/mnt');
       if (mntDir.existsSync()) {
-        for (final entry in mntDir.listSync()) {
+        for (final entry in mntDir.listSync(followLinks: false)) {
           if (entry is Directory) {
             final name = entry.path.split('/').last.toLowerCase();
             if (name.contains('usb') ||
                 name.contains('udisk') ||
-                name.contains('media_rw')) {
+                name.contains('media_rw') ||
+                name.contains('extsd') ||
+                name.contains('sdcard1')) {
               if (name.contains('media_rw')) {
                 try {
-                  for (final sub in entry.listSync()) {
+                  for (final sub in entry.listSync(followLinks: false)) {
                     if (sub is Directory &&
                         !locs.any((l) => l.path == sub.path)) {
                       final subName = sub.path.split('/').last;
@@ -137,6 +164,37 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
       }
     } catch (e) {
       debugPrint('Note: /mnt scan: $e');
+    }
+
+    // 3. Check well-known Smart Panel direct USB paths
+    final knownUsbPaths = [
+      '/mnt/usb_storage',
+      '/mnt/usb',
+      '/mnt/udisk',
+      '/mnt/udisk0',
+      '/mnt/udisk1',
+      '/mnt/udisk2',
+      '/storage/udisk0',
+      '/storage/udisk1',
+      '/storage/usbotg',
+      '/mnt/extsd',
+      '/mnt/sdcard1',
+      '/mnt/usbhost',
+    ];
+    for (final p in knownUsbPaths) {
+      try {
+        final dir = Directory(p);
+        if (dir.existsSync() && !locs.any((l) => l.path == dir.path)) {
+          locs.add(
+            StorageLocation(
+              title: 'USB Drive (${dir.path.split('/').last})',
+              path: dir.path,
+              icon: LucideIcons.hardDrive,
+              isUsb: true,
+            ),
+          );
+        }
+      } catch (_) {}
     }
 
     // 3. Check path_provider getExternalStorageDirectories for USB mounts
@@ -422,18 +480,28 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    final dialogWidth = min(screenSize.width * 0.90, 880.0);
-    final dialogHeight = min(screenSize.height * 0.88, 620.0);
+    final dialogWidth = min(screenSize.width * 0.92, 920.0);
+    final dialogHeight = min(screenSize.height * 0.88, 650.0);
 
-    final displayEntities = _searchQuery.trim().isEmpty
-        ? _currentEntities
-        : _currentEntities.where((e) {
-            final name = e.path
-                .split(Platform.pathSeparator)
-                .last
-                .toLowerCase();
-            return name.contains(_searchQuery.toLowerCase());
-          }).toList();
+    final displayEntities = _currentEntities.where((e) {
+      final name = e.path.split(Platform.pathSeparator).last;
+      if (_searchQuery.trim().isNotEmpty &&
+          !name.toLowerCase().contains(_searchQuery.toLowerCase())) {
+        return false;
+      }
+      if (e is File) {
+        final ext = name.contains('.')
+            ? name.split('.').last.toLowerCase()
+            : '';
+        if (_docTypeFilter == 'ppt' && !(ext == 'ppt' || ext == 'pptx')) {
+          return false;
+        }
+        if (_docTypeFilter == 'pdf' && ext != 'pdf') {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -457,6 +525,53 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
           children: [
             // Header Bar
             _buildHeader(context),
+
+            // Storage Permission Warning Banner (if denied on Android)
+            if (_hasPermissionIssue)
+              Container(
+                color: const Color(0xFF7C2D12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.alertTriangle,
+                      color: Colors.orangeAccent,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Storage permission is required to view USB & internal files.',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        await openAppSettings();
+                        _loadStorageLocations();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                      ),
+                      child: const Text(
+                        'Grant Access',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Storage Locations Bar (USB, Internal, Downloads, Documents)
             _buildLocationsBar(),
@@ -530,31 +645,39 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
           ),
           const Spacer(),
           // System File Manager button
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop();
-              widget.onOpenSystemPicker();
-            },
-            icon: const Icon(
-              LucideIcons.smartphone,
-              size: 16,
-              color: Color(0xFF38BDF8),
-            ),
-            label: const Text(
-              'System File Picker',
-              style: TextStyle(
+          Tooltip(
+            message: 'Open device default File Manager',
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                widget.onOpenSystemPicker();
+              },
+              icon: const Icon(
+                LucideIcons.folderOpen,
+                size: 16,
                 color: Color(0xFF38BDF8),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
               ),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF0284C7)),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+              label: const Text(
+                'Open File Manager',
+                style: TextStyle(
+                  color: Color(0xFF38BDF8),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              backgroundColor: const Color(0xFF0369A1).withValues(alpha: 0.12),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF0284C7)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                backgroundColor: const Color(
+                  0xFF0369A1,
+                ).withValues(alpha: 0.12),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -706,9 +829,28 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
             ),
           ),
           const SizedBox(width: 10),
+          // Doc Type Filters
+          Container(
+            height: 38,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF13151A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF2E333D)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildFilterButton('all', 'All'),
+                _buildFilterButton('ppt', 'PPT'),
+                _buildFilterButton('pdf', 'PDF'),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
           // Filter / Search input
           SizedBox(
-            width: 190,
+            width: 170,
             height: 38,
             child: TextField(
               controller: _searchController,
@@ -759,6 +901,34 @@ class _StorageBrowserDialogState extends State<StorageBrowserDialog> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildFilterButton(String type, String label) {
+    final isSelected = _docTypeFilter == type;
+    return GestureDetector(
+      onTap: () => setState(() => _docTypeFilter = type),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (type == 'ppt'
+                    ? const Color(0xFFD97706)
+                    : (type == 'pdf'
+                          ? const Color(0xFFDC2626)
+                          : const Color(0xFF2563EB)))
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white60,
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }

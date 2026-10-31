@@ -18,6 +18,7 @@ import '../services/ppt_conversion_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'table_picker_dialog.dart';
 import 'periodic_table_dialog.dart';
+import 'storage_browser_dialog.dart';
 
 class WhiteboardToolbar extends StatelessWidget {
   final VoidCallback? onOpenRuler;
@@ -1185,15 +1186,46 @@ class WhiteboardToolbar extends StatelessWidget {
     BuildContext context,
     WhiteboardProvider provider,
   ) async {
+    // Pre-warm Cloud Run server concurrently to eliminate cold-start delay
+    PptConversionService.preWarmServer();
+
+    // Show Smart Board optimized document browser dialog
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) => StorageBrowserDialog(
+        onFileSelected: (file, fileName) async {
+          if (context.mounted) {
+            await _processImportFile(
+              context: context,
+              provider: provider,
+              file: file,
+              fileName: fileName,
+            );
+          }
+        },
+        onOpenSystemPicker: () {
+          _pickDocumentViaSystem(context, provider);
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickDocumentViaSystem(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     // Pre-warm Cloud Run server concurrently to eliminate cold-start delay
     PptConversionService.preWarmServer();
 
     try {
-      // Use FileType.any so OEM panel file managers do NOT receive complex EXTRA_MIME_TYPES
-      // which causes them to switch into multi-select or highlight-only mode.
-      final result = await FilePicker.pickFiles(type: FileType.any);
+      // Use withReadStream so ContentResolver can stream virtual / content:// URIs safely
+      final result = await FilePicker.pickFiles(
+        type: FileType.any,
+        withReadStream: true,
+      );
 
       if (result == null || result.files.isEmpty) {
         // User cancelled or panel dismissed
@@ -1222,21 +1254,40 @@ class WhiteboardToolbar extends StatelessWidget {
       }
 
       File? docFile;
+
+      // 1. Direct path check
       if (picked.path != null && picked.path!.isNotEmpty) {
-        final f = File(picked.path!);
-        if (f.existsSync()) {
-          docFile = f;
+        try {
+          final f = File(picked.path!);
+          if (f.existsSync()) {
+            docFile = f;
+          }
+        } catch (_) {}
+      }
+
+      // 2. ReadStream fallback: Streams Android ContentResolver URI to local temp file
+      if (docFile == null && picked.readStream != null) {
+        final tempDir = await getTemporaryDirectory();
+        final tempFile = File(
+          '${tempDir.path}/picked_${DateTime.now().millisecondsSinceEpoch}_$fileName',
+        );
+        final sink = tempFile.openWrite();
+        await picked.readStream!.pipe(sink);
+        if (tempFile.existsSync()) {
+          docFile = tempFile;
         }
       }
 
-      // Fallback: If path is null due to Scoped Storage / content URI restriction
+      // 3. Bytes fallback
       if (docFile == null && picked.bytes != null) {
         final tempDir = await getTemporaryDirectory();
         final tempFile = File(
           '${tempDir.path}/picked_${DateTime.now().millisecondsSinceEpoch}_$fileName',
         );
         await tempFile.writeAsBytes(picked.bytes!);
-        docFile = tempFile;
+        if (tempFile.existsSync()) {
+          docFile = tempFile;
+        }
       }
 
       if (docFile == null) {
@@ -1356,6 +1407,7 @@ class WhiteboardToolbar extends StatelessWidget {
 
       if (pages.isNotEmpty) {
         provider.importPages(pages);
+        provider.setTool(WhiteboardTool.pen);
       }
     } catch (e) {
       if (context.mounted) {
@@ -1580,23 +1632,20 @@ class _ToolButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isEnabled = onTap != null;
 
-    Color defaultIconColor =
-        switch (label) {
-          'Pen' => const Color(0xFF0EA5E9),
-          'Eraser' => const Color(0xFFF97316),
-          'Clear All' => const Color(0xFFEF4444),
-          'Select' => const Color(0xFF06B6D4),
-          'Shape' => const Color(0xFFA855F7),
-          'Image' => const Color(0xFF22C55E),
-          'PPT/PDF' => const Color(0xFFF59E0B),
-          'Background' => const Color(0xFF10B981),
-          'Tools' => const Color(0xFF38BDF8),
-          'Undo' =>
-            isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
-          'Redo' =>
-            isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
-          _ => const Color(0xFF334155),
-        };
+    Color defaultIconColor = switch (label) {
+      'Pen' => const Color(0xFF0EA5E9),
+      'Eraser' => const Color(0xFFF97316),
+      'Clear All' => const Color(0xFFEF4444),
+      'Select' => const Color(0xFF06B6D4),
+      'Shape' => const Color(0xFFA855F7),
+      'Image' => const Color(0xFF22C55E),
+      'PPT/PDF' => const Color(0xFFF59E0B),
+      'Background' => const Color(0xFF10B981),
+      'Tools' => const Color(0xFF38BDF8),
+      'Undo' => isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+      'Redo' => isEnabled ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+      _ => const Color(0xFF334155),
+    };
 
     final iconColor = isActive ? const Color(0xFF38BDF8) : defaultIconColor;
     final textColor = isActive
@@ -1920,4 +1969,3 @@ class _ToolboxOptionItem extends StatelessWidget {
     );
   }
 }
-

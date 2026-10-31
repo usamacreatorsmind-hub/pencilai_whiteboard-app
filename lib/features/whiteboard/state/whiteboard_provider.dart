@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../models/board_element.dart';
@@ -638,9 +639,24 @@ class WhiteboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Directory?> _getSafeDocumentsDirectory() async {
+    try {
+      return await getApplicationDocumentsDirectory();
+    } on MissingPluginException {
+      return null;
+    } catch (e) {
+      if (e is MissingPluginException ||
+          e.toString().contains('MissingPluginException')) {
+        return null;
+      }
+      return null;
+    }
+  }
+
   Future<void> _loadSettings() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await _getSafeDocumentsDirectory();
+      if (dir == null) return;
       final file = File('${dir.path}/whiteboard_settings.json');
       if (await file.exists()) {
         final content = await file.readAsString();
@@ -673,14 +689,19 @@ class WhiteboardProvider extends ChangeNotifier {
         notifyListeners();
       }
       unawaited(checkDownloadedTranslationModels());
+    } on MissingPluginException {
+      // Ignored when path_provider is unavailable in test/headless environments
     } catch (e) {
-      debugPrint('Error loading whiteboard settings: $e');
+      if (!e.toString().contains('MissingPluginException')) {
+        debugPrint('Error loading whiteboard settings: $e');
+      }
     }
   }
 
   Future<void> _saveSettings() async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await _getSafeDocumentsDirectory();
+      if (dir == null) return;
       final file = File('${dir.path}/whiteboard_settings.json');
       final map = {
         'multiFingerWritingMode': _multiFingerWritingMode.index,
@@ -693,8 +714,12 @@ class WhiteboardProvider extends ChangeNotifier {
             .toList(),
       };
       await file.writeAsString(jsonEncode(map));
+    } on MissingPluginException {
+      // Ignored when path_provider is unavailable in test/headless environments
     } catch (e) {
-      debugPrint('Error saving whiteboard settings: $e');
+      if (!e.toString().contains('MissingPluginException')) {
+        debugPrint('Error saving whiteboard settings: $e');
+      }
     }
   }
 
@@ -782,8 +807,88 @@ class WhiteboardProvider extends ChangeNotifier {
   Offset viewportCenterOnCanvas(Size viewport) =>
       screenToCanvas(Offset(viewport.width / 2, viewport.height / 2));
 
-  void panCanvas(Offset delta) {
-    _canvasPanOffset += delta;
+  bool get hasDocumentSlides =>
+      currentPage.elements.any((e) => e is ImageElement && e.isDocumentSlide);
+
+  double get documentMaxY {
+    double maxY = 0.0;
+    for (final el in currentPage.elements) {
+      if (el is ImageElement && el.isDocumentSlide) {
+        final bottom = el.position.dy + el.size.height;
+        if (bottom > maxY) maxY = bottom;
+      }
+    }
+    return maxY;
+  }
+
+  int get totalDocumentSlides {
+    return currentPage.elements
+        .whereType<ImageElement>()
+        .where((e) => e.isDocumentSlide)
+        .length;
+  }
+
+  int get currentDocumentSlideIndex {
+    final slides = currentPage.elements
+        .whereType<ImageElement>()
+        .where((e) => e.isDocumentSlide)
+        .toList();
+    if (slides.isEmpty) return 0;
+
+    final currentY = -_canvasPanOffset.dy;
+    int closestIndex = 0;
+    double closestDist = double.infinity;
+
+    for (int i = 0; i < slides.length; i++) {
+      final s = slides[i];
+      final dist = (s.position.dy - currentY).abs();
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIndex = i;
+      }
+    }
+    return closestIndex;
+  }
+
+  void jumpToDocumentSlide(int index) {
+    final slides = currentPage.elements
+        .whereType<ImageElement>()
+        .where((e) => e.isDocumentSlide)
+        .toList();
+    if (index >= 0 && index < slides.length) {
+      final targetSlide = slides[index];
+      _canvasPanOffset = Offset(0.0, -targetSlide.position.dy);
+      _boardVersion++;
+      _notify();
+    }
+  }
+
+  void jumpToNextDocumentSlide() {
+    final curr = currentDocumentSlideIndex;
+    if (curr < totalDocumentSlides - 1) {
+      jumpToDocumentSlide(curr + 1);
+    }
+  }
+
+  void jumpToPreviousDocumentSlide() {
+    final curr = currentDocumentSlideIndex;
+    if (curr > 0) {
+      jumpToDocumentSlide(curr - 1);
+    }
+  }
+
+  void panCanvas(Offset delta, {Size? viewportSize}) {
+    if (hasDocumentSlides && viewportSize != null) {
+      final maxY = documentMaxY;
+      final screenH = viewportSize.height;
+      final minPanY = min(0.0, -(maxY - screenH));
+      const maxPanY = 0.0;
+
+      final newDy = (_canvasPanOffset.dy + delta.dy).clamp(minPanY, maxPanY);
+      _canvasPanOffset = Offset(0.0, newDy);
+    } else {
+      _canvasPanOffset += delta;
+    }
     notifyListeners(); // _notify() nahi: cache invalidate mat karo
   }
 

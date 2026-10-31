@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:uuid/uuid.dart';
+import '../models/board_element.dart';
 import '../models/board_page.dart';
 import '../models/image_element.dart';
 import 'ppt_conversion_service.dart';
@@ -55,7 +56,7 @@ class DocumentImportService {
       throw Exception("The document contains no readable pages.");
     }
 
-    final List<BoardPage?> importedPages = List<BoardPage?>.filled(totalPages, null);
+    final List<ImageElement?> importedSlideElements = List<ImageElement?>.filled(totalPages, null);
     final tempDir = await getTemporaryDirectory();
     final double screenWidth = targetScreenSize?.width ?? 1280.0;
     final double screenHeight = targetScreenSize?.height ?? 720.0;
@@ -65,14 +66,39 @@ class DocumentImportService {
 
     for (int start = 1; start <= totalPages; start += batchSize) {
       final int end = min(start + batchSize - 1, totalPages);
-      onProgress?.call(40 + ((start / totalPages) * 55).toInt(), 100, 'Rendering slides $start to $end of $totalPages, please wait...');
+      onProgress?.call(
+        40 + ((start / totalPages) * 55).toInt(),
+        100,
+        'Rendering slides $start to $end of $totalPages, please wait...',
+      );
 
       List<Future<void>> batchFutures = [];
       for (int i = start; i <= end; i++) {
         final pageNum = i;
         batchFutures.add(() async {
           final page = await pdfDoc.getPage(pageNum);
-          final pageImage = await page.render(width: page.width * 3.0, height: page.height * 3.0, format: PdfPageImageFormat.png);
+          final double pWidth = page.width;
+          final double pHeight = page.height;
+          final double aspect = (pHeight > 0 && pWidth > 0) ? (pWidth / pHeight) : (16.0 / 9.0);
+
+          double slideWidth;
+          double slideHeight;
+          if (aspect >= 1.0) {
+            // Landscape presentation: Full screen edge to edge
+            slideWidth = screenWidth;
+            slideHeight = screenHeight;
+          } else {
+            // Portrait document (e.g. A4 PDF): Full width edge to edge
+            slideWidth = screenWidth;
+            slideHeight = screenWidth / aspect;
+          }
+          const double slideX = 0.0;
+
+          final pageImage = await page.render(
+            width: max(page.width * 2.5, screenWidth * 2.0),
+            height: max(page.height * 2.5, slideHeight * 2.0),
+            format: PdfPageImageFormat.png,
+          );
           await page.close();
 
           if (pageImage != null && pageImage.bytes.isNotEmpty) {
@@ -80,15 +106,13 @@ class DocumentImportService {
             final imageFile = File(imagePath);
             await imageFile.writeAsBytes(pageImage.bytes);
 
-            final imageElement = ImageElement(
+            importedSlideElements[pageNum - 1] = ImageElement(
               id: const Uuid().v4(),
-              position: Offset.zero,
+              position: const Offset(slideX, 0.0),
               imageUrl: imagePath,
-              size: Size(screenWidth, screenHeight),
+              size: Size(slideWidth, slideHeight),
               isDocumentSlide: true,
             );
-
-            importedPages[pageNum - 1] = BoardPage(id: const Uuid().v4(), elements: [imageElement]);
           }
         }());
       }
@@ -96,8 +120,27 @@ class DocumentImportService {
     }
 
     await pdfDoc.close();
+
+    // Stack slides in vertical sequence edge to edge without gaps
+    double currentY = 0.0;
+    final List<BoardElement> allSlides = [];
+
+    for (int i = 0; i < totalPages; i++) {
+      final slide = importedSlideElements[i];
+      if (slide != null) {
+        slide.position = Offset(0.0, currentY);
+        allSlides.add(slide);
+        currentY += slide.size.height;
+      }
+    }
+
     onProgress?.call(100, 100, 'Import completed successfully!');
 
-    return importedPages.whereType<BoardPage>().toList();
+    final verticalDocumentPage = BoardPage(
+      id: const Uuid().v4(),
+      elements: allSlides,
+    );
+
+    return [verticalDocumentPage];
   }
 }

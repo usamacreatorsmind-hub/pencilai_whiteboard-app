@@ -34,7 +34,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final Map<int, _NibTrack> _nibTracks = {};
   static const int _kNibDecideMs = 150; // initial voting window
   static const int _kNibThickStreak =
-  3; // consecutive thick readings to upgrade later
+      3; // consecutive thick readings to upgrade later
   // displayElements memoization
   Iterable<BoardElement>? _displaySource;
   List<BoardElement> _displayCache = const [];
@@ -377,7 +377,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     if (provider.currentTool == WhiteboardTool.preview) {
       if (event.pointer == _pointerManager.panPointerId) {
-        provider.panCanvas(event.delta);
+        final viewportSize = MediaQuery.sizeOf(context);
+        provider.panCanvas(event.delta, viewportSize: viewportSize);
       }
       _pointerManager.requestRepaint(mounted);
       return;
@@ -488,6 +489,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final bool wasGestureEraser = _pointerManager.isUsingGestureEraser;
     final mmTarget = _pointerManager.mmStrokeTargets[pointerId];
     final element = _pointerManager.activeElements.remove(pointerId);
+    if (pointerId == _pointerManager.panPointerId) {
+      _pointerManager.panPointerId = null;
+    }
     _pointerManager.forgetPointer(pointerId);
     _forgetNib(pointerId);
 
@@ -609,6 +613,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       );
     }
 
+    if (pointerId == _pointerManager.panPointerId) {
+      _pointerManager.panPointerId = null;
+    }
     _pointerManager.forgetPointer(pointerId);
 
     if (provider.currentTool == WhiteboardTool.select &&
@@ -768,13 +775,37 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                               width: rawRect.width * img.scale,
                               height: rawRect.height * img.scale,
                             );
+
+                            // Viewport Culling: Off-screen slides render as lightweight placeholders to conserve GPU RAM
+                            final screenSize = MediaQuery.of(context).size;
+                            final double viewportTop = -panOffset.dy - 1000.0;
+                            final double viewportBottom =
+                                -panOffset.dy + screenSize.height + 1000.0;
+                            final bool isOffScreen =
+                                visualRect.bottom < viewportTop ||
+                                visualRect.top > viewportBottom;
+
+                            if (isOffScreen && img.isDocumentSlide) {
+                              return Positioned(
+                                left: visualRect.left,
+                                top: visualRect.top,
+                                width: visualRect.width,
+                                height: visualRect.height,
+                                child: Container(
+                                  color: Colors.white,
+                                ),
+                              );
+                            }
+
                             final bool isPlain =
+                                img.isDocumentSlide ||
                                 img.isTransparent ||
                                 img.imageUrl.contains('smart_obj');
+                            final fit = img.isDocumentSlide ? BoxFit.fill : BoxFit.contain;
                             final imageWidget = img.imageUrl.startsWith('http')
                                 ? Image.network(
                                     img.imageUrl,
-                                    fit: BoxFit.contain,
+                                    fit: fit,
                                     filterQuality: FilterQuality.high,
                                     errorBuilder: (c, e, s) => const Icon(
                                       Icons.broken_image,
@@ -783,7 +814,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                                   )
                                 : Image.file(
                                     File(img.imageUrl),
-                                    fit: BoxFit.contain,
+                                    fit: fit,
                                     filterQuality: FilterQuality.high,
                                     errorBuilder: (c, e, s) => const Icon(
                                       Icons.broken_image,
