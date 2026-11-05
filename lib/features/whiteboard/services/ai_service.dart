@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 class AiService {
   static const String apiKey = String.fromEnvironment(
     'GEMINI_API_KEY',
-    defaultValue: '',
+    defaultValue: 'AQ.Ab8RN6IDGJXzUjgQ3PQl7y4w3hCN4YmuYHmrDf6_PQ4tuiCL0g',
   );
   static const List<String> _candidateModels = [
     'gemini-2.5-flash-lite',
