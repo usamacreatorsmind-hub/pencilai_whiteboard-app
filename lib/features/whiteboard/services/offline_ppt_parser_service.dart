@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:xml/xml.dart';
+import '../models/board_element.dart';
 import '../models/board_page.dart';
 import '../models/image_element.dart';
 
