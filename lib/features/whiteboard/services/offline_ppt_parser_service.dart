@@ -87,7 +87,7 @@ class OfflinePptParserService {
     }
 
     // 3. Fast path: Convert Slide 1 immediately so presentation opens instantly (< 1s)
-    onProgress?.call(1, totalSlides, 'Preparing Slide 1...');
+    onProgress?.call(1, totalSlides, 'Preparing presentation, please wait...');
     final String base64Data = base64Encode(bytes);
     final String jsLibrary = await rootBundle.loadString('assets/pptx-preview.umd.js');
 
@@ -301,7 +301,7 @@ class OfflinePptParserService {
 
       pages.add(BoardPage(
         id: _uuid.v4(),
-        elements: [imageElement],
+        elements: <BoardElement>[imageElement],
       ));
     }
     return pages;

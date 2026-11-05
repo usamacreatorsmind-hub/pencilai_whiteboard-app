@@ -206,6 +206,7 @@ class WhiteboardPainter extends CustomPainter {
         switch (element.penType) {
           case PenType.pen:
           case PenType.smartPen:
+          case PenType.textPen:
             _strokePaint
               ..maskFilter = null
               ..strokeCap = StrokeCap.round

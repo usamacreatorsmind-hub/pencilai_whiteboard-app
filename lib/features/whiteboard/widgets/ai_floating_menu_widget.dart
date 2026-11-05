@@ -14,11 +14,12 @@ class AiFloatingMenuWidget extends StatefulWidget {
   State<AiFloatingMenuWidget> createState() => _AiFloatingMenuWidgetState();
 }
 
-
 class _AiFloatingMenuWidgetState extends State<AiFloatingMenuWidget>
     with SingleTickerProviderStateMixin {
   bool _isExpanded = false;
   late AnimationController _animController;
+  late ValueNotifier<Offset> _positionNotifier;
+  bool _isDragging = false;
 
   @override
   void initState() {
@@ -27,11 +28,13 @@ class _AiFloatingMenuWidgetState extends State<AiFloatingMenuWidget>
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
+    _positionNotifier = ValueNotifier<Offset>(const Offset(-1, -1));
   }
 
   @override
   void dispose() {
     _animController.dispose();
+    _positionNotifier.dispose();
     super.dispose();
   }
 
@@ -57,149 +60,200 @@ class _AiFloatingMenuWidgetState extends State<AiFloatingMenuWidget>
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      right: 24,
-      bottom: 100,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Expanded Menu Options (Quick Quiz, Homework, Summary)
-          if (_isExpanded) ...[
-            _buildMenuButton(
-              title: 'Quick Quiz',
-              icon: LucideIcons.sparkle,
-              color: const Color(0xFF10B981), // Green sparkle
-              onTap: () async {
-                if (!await _checkInternet(context)) return;
-                if (!context.mounted) return;
-                setState(() => _isExpanded = false);
-                context.read<WhiteboardProvider>().generateAiContent(
-                  type: 'Quick Quiz',
-                  isWholeDoc: false,
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            _buildMenuButton(
-              title: 'Homework',
-              icon: LucideIcons.sparkles,
-              color: const Color(0xFF0EA5E9), // Sky blue sparkle
-              onTap: () async {
-                if (!await _checkInternet(context)) return;
-                if (!context.mounted) return;
-                setState(() => _isExpanded = false);
-                context.read<WhiteboardProvider>().generateAiContent(
-                  type: 'Homework',
-                  isWholeDoc: false,
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            _buildMenuButton(
-              title: 'Summary',
-              icon: LucideIcons.star,
-              color: const Color(0xFFF59E0B), // Warm amber sparkle
-              onTap: () async {
-                if (!await _checkInternet(context)) return;
-                if (!context.mounted) return;
-                setState(() => _isExpanded = false);
-                context.read<WhiteboardProvider>().generateAiContent(
-                  type: 'Summary',
-                  isWholeDoc: false,
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-          ],
+    final screenSize = MediaQuery.of(context).size;
+    if (_positionNotifier.value.dx < 0) {
+      _positionNotifier.value = Offset(
+        screenSize.width - 78,
+        screenSize.height - 160,
+      );
+    }
 
-          // Main Floating AI Button / Close Button
-          AnimatedBuilder(
-            animation: _animController,
-            builder: (context, _) {
-              // Gentle breathing pulse animation for the button
-              final double pulseScale = _isExpanded
-                  ? 1.0
-                  : (1.0 + sin(_animController.value * 2 * pi) * 0.025);
+    return ValueListenableBuilder<Offset>(
+      valueListenable: _positionNotifier,
+      builder: (context, currentPos, _) {
+        final bool expandUp = currentPos.dy >= 200;
+        final bool alignRight =
+            !_isDragging && (currentPos.dx >= (screenSize.width / 2));
 
-              return Transform.scale(
-                scale: pulseScale,
-                child: SizedBox(
-                  width: 54,
-                  height: 54,
-                  child: CustomPaint(
-                    painter: _RainbowRingPainter(
-                      animationValue: _animController.value,
-                    ),
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () async {
-                          if (_isExpanded) {
-                            setState(() => _isExpanded = false);
-                            return;
-                          }
-                          if (!await _checkInternet(context)) return;
-                          if (!context.mounted) return;
-                          setState(() => _isExpanded = true);
-                        },
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const RadialGradient(
-                              center: Alignment(-0.35, -0.45),
-                              radius: 0.95,
-                              colors: [
-                                Color(0xFFFFFFFF),
-                                Color(0xFFF8FAFC),
-                                Color(0xFFEDF2F7),
-                              ],
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.95),
-                              width: 1.0,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF7C3AED).withValues(alpha: 0.22),
-                                blurRadius: 12,
-                                offset: const Offset(0, 3),
-                              ),
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.10),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
+        final List<Widget> menuButtons = [
+          _buildMenuButton(
+            title: 'Quick Quiz',
+            icon: LucideIcons.sparkle,
+            color: const Color(0xFF10B981), // Green sparkle
+            onTap: () async {
+              if (!await _checkInternet(context)) return;
+              if (!context.mounted) return;
+              setState(() => _isExpanded = false);
+              context.read<WhiteboardProvider>().generateAiContent(
+                    type: 'Quick Quiz',
+                    isWholeDoc: false,
+                  );
+            },
+          ),
+          const SizedBox(height: 10),
+          _buildMenuButton(
+            title: 'Homework',
+            icon: LucideIcons.sparkles,
+            color: const Color(0xFF0EA5E9), // Sky blue sparkle
+            onTap: () async {
+              if (!await _checkInternet(context)) return;
+              if (!context.mounted) return;
+              setState(() => _isExpanded = false);
+              context.read<WhiteboardProvider>().generateAiContent(
+                    type: 'Homework',
+                    isWholeDoc: false,
+                  );
+            },
+          ),
+          const SizedBox(height: 10),
+          _buildMenuButton(
+            title: 'Summary',
+            icon: LucideIcons.star,
+            color: const Color(0xFFF59E0B), // Warm amber sparkle
+            onTap: () async {
+              if (!await _checkInternet(context)) return;
+              if (!context.mounted) return;
+              setState(() => _isExpanded = false);
+              context.read<WhiteboardProvider>().generateAiContent(
+                    type: 'Summary',
+                    isWholeDoc: false,
+                  );
+            },
+          ),
+        ];
+
+        final Widget aiButtonWidget = AnimatedBuilder(
+          animation: _animController,
+          builder: (context, _) {
+            final double pulseScale = _isExpanded
+                ? 1.0
+                : (1.0 + sin(_animController.value * 2 * pi) * 0.025);
+
+            return Transform.scale(
+              scale: pulseScale,
+              child: SizedBox(
+                width: 54,
+                height: 54,
+                child: CustomPaint(
+                  painter: _RainbowRingPainter(
+                    animationValue: _animController.value,
+                  ),
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () async {
+                        if (_isDragging) return;
+                        if (_isExpanded) {
+                          setState(() => _isExpanded = false);
+                          return;
+                        }
+                        if (!await _checkInternet(context)) return;
+                        if (!context.mounted) return;
+                        setState(() => _isExpanded = true);
+                      },
+                      onPanStart: (_) {
+                        if (_isExpanded) {
+                          setState(() => _isExpanded = false);
+                        }
+                        _isDragging = true;
+                      },
+                      onPanUpdate: (details) {
+                        final newX = (currentPos.dx + details.delta.dx)
+                            .clamp(10.0, screenSize.width - 64.0);
+                        final newY = (currentPos.dy + details.delta.dy)
+                            .clamp(10.0, screenSize.height - 74.0);
+                        _positionNotifier.value = Offset(newX, newY);
+                      },
+                      onPanEnd: (_) {
+                        _isDragging = false;
+                      },
+                      onPanCancel: () {
+                        _isDragging = false;
+                      },
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const RadialGradient(
+                            center: Alignment(-0.35, -0.45),
+                            radius: 0.95,
+                            colors: [
+                              Color(0xFFFFFFFF),
+                              Color(0xFFF8FAFC),
+                              Color(0xFFEDF2F7),
                             ],
                           ),
-                          child: Center(
-                            child: _isExpanded
-                                ? const Icon(
-                                    LucideIcons.x,
-                                    size: 20,
-                                    color: Color(0xFF0F172A),
-                                  )
-                                : const SizedBox(
-                                    width: 26,
-                                    height: 26,
-                                    child: CustomPaint(
-                                      painter: _AiSparklesPainter(
-                                        color: Color(0xFF0F172A),
-                                      ),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.95),
+                            width: 1.0,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF7C3AED)
+                                  .withValues(alpha: 0.22),
+                              blurRadius: 12,
+                              offset: const Offset(0, 3),
+                            ),
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.10),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: _isExpanded
+                              ? const Icon(
+                                  LucideIcons.x,
+                                  size: 20,
+                                  color: Color(0xFF0F172A),
+                                )
+                              : const SizedBox(
+                                  width: 26,
+                                  height: 26,
+                                  child: CustomPaint(
+                                    painter: _AiSparklesPainter(
+                                      color: Color(0xFF0F172A),
                                     ),
                                   ),
-                          ),
+                                ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              );
-            },
+              ),
+            );
+          },
+        );
+
+        return Positioned(
+          left: alignRight ? null : currentPos.dx,
+          right: alignRight ? screenSize.width - currentPos.dx - 54.0 : null,
+          top: expandUp ? null : currentPos.dy,
+          bottom: expandUp ? screenSize.height - currentPos.dy - 54.0 : null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment:
+                alignRight ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            children: expandUp
+                ? [
+                    if (_isExpanded) ...[
+                      ...menuButtons,
+                      const SizedBox(height: 12),
+                    ],
+                    aiButtonWidget,
+                  ]
+                : [
+                    aiButtonWidget,
+                    if (_isExpanded) ...[
+                      const SizedBox(height: 12),
+                      ...menuButtons,
+                    ],
+                  ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -347,10 +401,9 @@ class _RainbowRingPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = (size.width / 2) - 2.0;
 
-    final sweepGradient = SweepGradient(
+    const sweepGradient = SweepGradient(
       center: Alignment.center,
       colors: _rainbowColors,
-      transform: GradientRotation(animationValue * 2 * pi),
     );
 
     final rect = Rect.fromCircle(center: center, radius: radius);

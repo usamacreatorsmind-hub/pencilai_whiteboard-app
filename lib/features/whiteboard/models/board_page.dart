@@ -6,8 +6,8 @@ class BoardPage {
 
   BoardPage({
     required this.id,
-    required this.elements,
-  });
+    required List<BoardElement> elements,
+  }) : elements = List<BoardElement>.from(elements);
 
   Map<String, dynamic> toJson() => {
         'id': id,

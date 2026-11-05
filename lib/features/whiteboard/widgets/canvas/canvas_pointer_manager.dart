@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../models/board_element.dart';
@@ -114,7 +113,6 @@ class CanvasPointerManager {
         kGestureEraserGraceMs;
   }
 
-  bool _pulseScheduled = false;
   Timer? watchdog;
   double screenWidth = 1920.0;
   RenderBox? box;
@@ -192,12 +190,8 @@ class CanvasPointerManager {
   bool hasTouchDown() => pointers.isNotEmpty;
 
   void requestRepaint(bool mounted) {
-    if (_pulseScheduled) return;
-    _pulseScheduled = true;
-    SchedulerBinding.instance.scheduleFrameCallback((_) {
-      _pulseScheduled = false;
-      if (mounted) activeLayerPulse.value++;
-    });
+    if (!mounted) return;
+    activeLayerPulse.value++;
   }
 
   List<PointerEvent> freshTouchPointers() {
@@ -562,7 +556,6 @@ class CanvasPointerManager {
     final now = DateTime.now();
     final freshTouches = freshTouchPointers();
     final allPointers = pointers.values.toList();
-    final touchCount = max(freshTouches.length, allPointers.length);
 
     // Latch: if already in gesture eraser mode and touch is still active OR within grace period:
     if (isUsingGestureEraser) {
@@ -578,17 +571,9 @@ class CanvasPointerManager {
       resetGestureEraser();
     }
 
-    // 1. Whole hand / 5 or more fingers:
-    // When user places 5 or more fingers (or their whole hand) on the panel,
-    // immediately enable erase mode.
-    // (Note: 1, 2, 3, and 4 fingers draw as pen strokes and do NOT trigger erase)
-    if (touchCount >= 5 ||
-        (nativePointerCount >= 5 && freshTouches.length >= 2)) {
-      lastPalmSeen = now;
-      return true;
-    }
-
-    // 2. Palm or backhand detection:
+    // Palm or backhand detection:
+    // Gesture Eraser triggers ONLY when a genuine palm or backhand is placed on the screen.
+    // Concurrent multi-finger touches (1 up to 60 fingers) draw as independent pen strokes.
     if (isPalm(event)) {
       lastPalmSeen = now;
       return true;
@@ -607,17 +592,8 @@ class CanvasPointerManager {
   }
 
   Offset getCanvasLocalPos(PointerEvent event, BuildContext context) {
-    box ??= context.findRenderObject() as RenderBox?;
-    final b = box;
-    Offset rawPos;
-    if (b != null && b.attached) {
-      rawPos = b.globalToLocal(event.position);
-    } else {
-      rawPos = event.localPosition;
-    }
-
     final provider = Provider.of<WhiteboardProvider>(context, listen: false);
-    return rawPos - provider.canvasPanOffset;
+    return event.localPosition - provider.canvasPanOffset;
   }
 
   double gestureEraseRadius([WhiteboardProvider? provider]) {

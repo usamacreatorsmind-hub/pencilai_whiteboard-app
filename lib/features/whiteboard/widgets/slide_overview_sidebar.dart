@@ -7,19 +7,47 @@ import '../models/image_element.dart';
 import '../models/document_element.dart';
 import '../../../widgets/pptx_viewer.dart';
 
-class SlideOverviewSidebar extends StatelessWidget {
+class SlideOverviewSidebar extends StatefulWidget {
   final VoidCallback onClose;
 
   const SlideOverviewSidebar({super.key, required this.onClose});
 
   @override
-  Widget build(BuildContext context) {
-    final provider = Provider.of<WhiteboardProvider>(context);
+  State<SlideOverviewSidebar> createState() => _SlideOverviewSidebarState();
+}
+
+class _SlideOverviewSidebarState extends State<SlideOverviewSidebar> {
+  late final ScrollController _scrollController;
+  int _lastActiveIndex = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToActiveItem(animate: false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToActiveItem({bool animate = false}) {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    if (!_scrollController.position.hasContentDimensions) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToActiveItem(animate: animate);
+      });
+      return;
+    }
+
+    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
     final pages = provider.pages;
-    final currentIndex = provider.currentPageIndex;
-    final bool showDeleteButton = pages.length > 1;
-    final double sidebarWidth = showDeleteButton ? 260.0 : 205.0;
-    // Check if any page contains document slides
+
     final docPage = pages.firstWhere(
       (p) => p.elements.any((e) => e is ImageElement && e.isDocumentSlide),
       orElse: () => provider.currentPage,
@@ -28,8 +56,63 @@ class SlideOverviewSidebar extends StatelessWidget {
         .whereType<ImageElement>()
         .where((e) => e.isDocumentSlide)
         .toList();
+
+    final bool isDocMode = docSlides.length > 1;
+
+    int activeItemIndex = 0;
+    if (isDocMode) {
+      activeItemIndex = provider.currentDocumentSlideIndex;
+    } else {
+      activeItemIndex = provider.currentPageIndex;
+    }
+
+    _lastActiveIndex = activeItemIndex;
+
+    const double itemHeight = 122.0; // 110 card height + 12 margin
+    final double maxScroll = _scrollController.position.maxScrollExtent;
+    final double targetOffset = (activeItemIndex * itemHeight).clamp(0.0, maxScroll);
+
+    if (animate) {
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _scrollController.jumpTo(targetOffset);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<WhiteboardProvider>(context);
+    final pages = provider.pages;
+    final currentIndex = provider.currentPageIndex;
+
+    final docPage = pages.firstWhere(
+      (p) => p.elements.any((e) => e is ImageElement && e.isDocumentSlide),
+      orElse: () => provider.currentPage,
+    );
+    final List<ImageElement> docSlides = docPage.elements
+        .whereType<ImageElement>()
+        .where((e) => e.isDocumentSlide)
+        .toList();
+
     final bool isDocMode = docSlides.length > 1;
     final int docPageIndex = pages.indexOf(docPage);
+
+    int activeItemIndex = 0;
+    if (isDocMode) {
+      activeItemIndex = provider.currentDocumentSlideIndex;
+    } else {
+      activeItemIndex = currentIndex;
+    }
+
+    if (activeItemIndex != _lastActiveIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToActiveItem(animate: true);
+      });
+    }
 
     final int extraPagesCount = isDocMode && pages.length > 1
         ? pages.length - 1
@@ -37,6 +120,9 @@ class SlideOverviewSidebar extends StatelessWidget {
     final int totalItems = isDocMode
         ? (docSlides.length + extraPagesCount)
         : pages.length;
+
+    final bool showDeleteButton = totalItems > 1;
+    final double sidebarWidth = showDeleteButton ? 260.0 : 205.0;
 
     return Container(
       margin: const EdgeInsets.only(right: 8, bottom: 4),
@@ -93,7 +179,7 @@ class SlideOverviewSidebar extends StatelessWidget {
                       size: 16,
                       color: Colors.white70,
                     ),
-                    onPressed: onClose,
+                    onPressed: widget.onClose,
                     tooltip: 'Close Sidebar',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -105,6 +191,7 @@ class SlideOverviewSidebar extends StatelessWidget {
             // Slide Thumbnails ListView
             Expanded(
               child: ListView.builder(
+                controller: _scrollController,
                 padding: const EdgeInsets.all(10),
                 itemCount: totalItems,
                 itemBuilder: (context, index) {
@@ -128,11 +215,15 @@ class SlideOverviewSidebar extends StatelessWidget {
                       }
                       provider.jumpToDocumentSlide(index);
                     };
+                    if (totalItems > 1 || docSlides.length > 1) {
+                      showItemDelete = true;
+                      onDelete = () => provider.deleteDocumentSlide(index);
+                    }
                   } else {
                     final int pageIdx = isDocMode
                         ? (index -
                               docSlides.length +
-                              (docPageIndex == 0 ? 1 : 0))
+                              (docPageIndex == 0 ? 1 : 0)).toInt()
                         : index;
                     if (pageIdx < pages.length) {
                       final page = pages[pageIdx];
@@ -146,7 +237,7 @@ class SlideOverviewSidebar extends StatelessWidget {
                             .firstOrNull;
                       } catch (_) {}
                       onTap = () => provider.switchPage(pageIdx);
-                      if (pages.length > 1) {
+                      if (totalItems > 1 || pages.length > 1) {
                         showItemDelete = true;
                         onDelete = () => provider.deletePage(pageIdx);
                       }
@@ -235,7 +326,7 @@ class SlideOverviewSidebar extends StatelessWidget {
                           ),
                         ),
 
-                        // Slide Number Badge (Top-Left)
+                        // Slide NumberBadge (Top-Left)
                         Positioned(
                           top: 6,
                           left: 6,

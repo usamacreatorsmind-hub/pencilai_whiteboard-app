@@ -3,13 +3,17 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
-
 class AiService {
   static const String apiKey = String.fromEnvironment(
     'GEMINI_API_KEY',
-    defaultValue: 'AQ.Ab8RN6Jr6kp32XGFtpjoix-jRW6xXS-IE98HTna1gDLfVpyeBQ',
+    defaultValue: '',
   );
-  static const String _modelName = 'gemini-flash-lite-latest';
+  static const List<String> _candidateModels = [
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-3.5-flash-lite',
+  ];
 
   Future<String> _generate(
     String prompt,
@@ -20,71 +24,88 @@ class AiService {
     if (apiKey.isEmpty) {
       return '⚠️ Gemini API Key is missing. Please run the app with --dart-define-from-file=env.json.';
     }
-    try {
-      final uri = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/$_modelName:generateContent',
-      );
 
-      List<Map<String, dynamic>> parts = [
-        {'text': prompt},
-      ];
+    List<Map<String, dynamic>> parts = [
+      {'text': prompt},
+    ];
 
-      // Direct in-memory image bytes (instant, zero disk I/O)
-      if (directBytes != null && directBytes.isNotEmpty) {
-        for (var bytes in directBytes) {
-          final base64Image = base64Encode(bytes);
-          parts.add({
-            'inline_data': {'mime_type': 'image/png', 'data': base64Image},
-          });
-        }
+    // Direct in-memory image bytes (instant, zero disk I/O)
+    if (directBytes != null && directBytes.isNotEmpty) {
+      for (var bytes in directBytes) {
+        final base64Image = base64Encode(bytes);
+        parts.add({
+          'inline_data': {'mime_type': 'image/png', 'data': base64Image},
+        });
       }
-
-      // Convert local slide image files to Base64 so Gemini can read visual slides
-      if (imagePaths != null && imagePaths.isNotEmpty) {
-        for (var path in imagePaths) {
-          try {
-            final file = File(path);
-            if (await file.exists()) {
-              final bytes = await file.readAsBytes();
-              final base64Image = base64Encode(bytes);
-              String mimeType = 'image/png';
-              if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
-                mimeType = 'image/jpeg';
-              }
-              parts.add({
-                'inline_data': {'mime_type': mimeType, 'data': base64Image},
-              });
-            }
-          } catch (_) {}
-        }
-      }
-
-      final isOcr = label == 'Handwriting OCR';
-      final res = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json', 'x-goog-api-key': apiKey},
-        body: jsonEncode({
-          'contents': [
-            {'parts': parts},
-          ],
-          'generationConfig': {
-            'maxOutputTokens': isOcr ? 40 : 1500,
-            'temperature': isOcr ? 0.0 : 0.7,
-          },
-        }),
-      );
-
-      if (res.statusCode != 200) {
-        return 'Error generating $label (${res.statusCode}): ${utf8.decode(res.bodyBytes)}';
-      }
-
-      final data = jsonDecode(utf8.decode(res.bodyBytes));
-      final resParts = data['candidates']?[0]?['content']?['parts'] as List?;
-      final text = resParts?.map((p) => p['text'] ?? '').join('').trim();
-      return (text == null || text.isEmpty) ? 'No $label generated.' : text;
-    } catch (e) {
-      return 'Error generating $label: $e';
     }
+
+    // Convert local slide image files to Base64 so Gemini can read visual slides
+    if (imagePaths != null && imagePaths.isNotEmpty) {
+      for (var path in imagePaths) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            final bytes = await file.readAsBytes();
+            final base64Image = base64Encode(bytes);
+            String mimeType = 'image/png';
+            if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+              mimeType = 'image/jpeg';
+            }
+            parts.add({
+              'inline_data': {'mime_type': mimeType, 'data': base64Image},
+            });
+          }
+        } catch (_) {}
+      }
+    }
+
+    final isOcr = label == 'Handwriting OCR';
+    final requestBody = jsonEncode({
+      'contents': [
+        {'parts': parts},
+      ],
+      'generationConfig': {
+        'maxOutputTokens': isOcr ? 40 : 1500,
+        'temperature': isOcr ? 0.0 : 0.7,
+      },
+    });
+
+    String lastError = '';
+
+    for (final model in _candidateModels) {
+      try {
+        final uri = Uri.parse(
+          'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+        );
+
+        final res = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json', 'x-goog-api-key': apiKey},
+          body: requestBody,
+        );
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(utf8.decode(res.bodyBytes));
+          final resParts = data['candidates']?[0]?['content']?['parts'] as List?;
+          final text = resParts?.map((p) => p['text'] ?? '').join('').trim();
+          return (text == null || text.isEmpty)
+              ? (isOcr ? '' : 'No $label generated.')
+              : text;
+        }
+
+        // If 404 (model deprecated or not found for this tier), try next candidate model
+        if (res.statusCode == 404) {
+          lastError = 'Error generating $label (${res.statusCode}): ${utf8.decode(res.bodyBytes)}';
+          continue;
+        }
+
+        return 'Error generating $label (${res.statusCode}): ${utf8.decode(res.bodyBytes)}';
+      } catch (e) {
+        lastError = 'Error generating $label: $e';
+      }
+    }
+
+    return lastError.isNotEmpty ? lastError : 'Failed to generate $label.';
   }
 
   Future<String> generateQuickQuiz(
@@ -94,6 +115,13 @@ class AiService {
     'Act as an expert educator. Based on the following teaching content/slide image, '
         'generate a maximum of 10 multiple-choice questions (MCQs) with 4 options '
         'each (A, B, C, D) and clearly indicate the correct answer.\n\n'
+        'Format each question strictly like this example:\n'
+        '1. What is the primary function of photosynthesis?\n'
+        'A. To absorb water\n'
+        'B. To convert light energy into chemical energy\n'
+        'C. To release carbon dioxide\n'
+        'D. To produce heat\n'
+        'Correct Answer: B\n\n'
         'Content:\n$contentText',
     'Quick Quiz',
     imagePaths: imagePaths,

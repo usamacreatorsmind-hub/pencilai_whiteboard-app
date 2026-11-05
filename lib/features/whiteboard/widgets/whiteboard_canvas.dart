@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-
 import '../../../widgets/pptx_viewer.dart';
 import '../models/board_element.dart';
 import '../models/document_element.dart';
@@ -34,7 +33,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   final Map<int, _NibTrack> _nibTracks = {};
   static const int _kNibDecideMs = 150; // initial voting window
   static const int _kNibThickStreak =
-      3; // consecutive thick readings to upgrade later
+  3; // consecutive thick readings to upgrade later
   // displayElements memoization
   Iterable<BoardElement>? _displaySource;
   List<BoardElement> _displayCache = const [];
@@ -96,17 +95,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final sinA = sin(-el.rotation);
       final r =
           Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) /
-          el.scale;
+              el.scale;
       q = c + r;
     }
     return q - el.position;
   }
 
   ({MindMapElement el, MindMapNode node})? _mindMapNodeAt(
-    Offset p,
-    WhiteboardProvider provider, {
-    double inflate = 0,
-  }) {
+      Offset p,
+      WhiteboardProvider provider, {
+        double inflate = 0,
+      }) {
     for (final el in _visibleMindMaps(provider)) {
       final n = el.nodeAt(_mmLocal(el, p), inflate: inflate);
       if (n != null) return (el: el, node: n);
@@ -162,9 +161,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (CanvasPointerManager.kDebugPointerInfo) {
       debugPrint(
         'DOWN: kind=${event.kind} dev=${event.device} id=${event.pointer} '
-        'rMajor=${event.radiusMajor.toStringAsFixed(1)} rMinor=${event.radiusMinor.toStringAsFixed(1)} '
-        'size=${event.size.toStringAsFixed(4)} press=${event.pressure.toStringAsFixed(2)} '
-        'active=${_pointerManager.pointers.length}',
+            'rMajor=${event.radiusMajor.toStringAsFixed(1)} rMinor=${event.radiusMinor.toStringAsFixed(1)} '
+            'size=${event.size.toStringAsFixed(4)} press=${event.pressure.toStringAsFixed(2)} '
+            'active=${_pointerManager.pointers.length}',
       );
     }
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
@@ -256,8 +255,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       final startHit = _mindMapNodeAt(localPos, provider, inflate: 6);
       if (startHit != null) {
         _pointerManager.mmStrokeTargets[pointerId] = (
-          mmId: startHit.el.id,
-          nodeId: startHit.node.id,
+        mmId: startHit.el.id,
+        nodeId: startHit.node.id,
         );
         if (startHit.el.selectedNodeId != startHit.node.id) {
           startHit.el.selectedNodeId = startHit.node.id;
@@ -315,6 +314,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     if (!provider.isAutoNibDetectionEnabled) return false;
     final t = _nibTracks[event.pointer];
     if (t == null) return false;
+    if (t.locked && provider.activePenProfile == PenProfile.thick) return false;
 
     if (event.kind == PointerDeviceKind.invertedStylus) {
       return provider.applyDetectedNib(PenProfile.thick, 0);
@@ -368,10 +368,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   }
 
   void _processSinglePointerMove(
-    PointerMoveEvent event,
-    WhiteboardProvider provider,
-  ) {
-    _pointerManager.pruneStalePointers();
+      PointerMoveEvent event,
+      WhiteboardProvider provider,
+      ) {
     final pointerId = event.pointer;
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
 
@@ -386,8 +385,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     if (CanvasPointerManager.kDebugPointerInfo &&
         DateTime.now()
-                .difference(_pointerManager.lastMoveLogTime)
-                .inMilliseconds >
+            .difference(_pointerManager.lastMoveLogTime)
+            .inMilliseconds >
             100) {
       debugPrint(
         'MOVE: pointers=${_pointerManager.pointers.length} fresh=${_pointerManager.freshTouchPointers().length} eraserMode=${_pointerManager.isUsingGestureEraser}',
@@ -521,12 +520,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         : 999;
     final bool isQuickPalm =
         durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
-        _pointerManager.isPalm(event);
+            _pointerManager.isPalm(event);
     final bool dropElement =
         wasGestureEraser ||
-        _pointerManager.isUsingGestureEraser ||
-        (isQuickPalm &&
-            (element is! StrokeElement || element.points.length <= 2));
+            _pointerManager.isUsingGestureEraser ||
+            (isQuickPalm &&
+                (element is! StrokeElement || element.points.length <= 2));
     if (element != null && !dropElement) {
       if (element is StrokeElement && element.points.length > 1) {
         element.invalidatePath();
@@ -586,10 +585,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
     final bool isPalmCancel =
         durationMs < CanvasPointerManager.kPalmCancelTimeWindowMs &&
-        (hint != null && (hint['isCanceled'] == true || hint['toolType'] == 5));
+            (hint != null && (hint['isCanceled'] == true || hint['toolType'] == 5));
 
     _pointerManager.lastCancelInfo =
-        'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
+    'id=$pointerId dur=${durationMs}ms palm=$isPalmCancel';
     if (CanvasPointerManager.kDebugPointerInfo) {
       debugPrint(
         'CANCEL: ${_pointerManager.lastCancelInfo} totalCount=${_pointerManager.cancelEventCount}',
@@ -641,11 +640,11 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   // -------------------------------------------------------------------------
 
   List<BoardElement> _displayElementsFor(
-    Iterable<BoardElement> elements,
-    int version,
-    bool overlay,
-    int page,
-  ) {
+      Iterable<BoardElement> elements,
+      int version,
+      bool overlay,
+      int page,
+      ) {
     final len = elements.length;
     if (identical(_displaySource, elements) &&
         _displayCacheVersion == version &&
@@ -707,17 +706,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   @override
   Widget build(BuildContext context) {
     return Selector<
-      WhiteboardProvider,
-      (int, Set<String>, Path?, WhiteboardTool, bool, int, Offset)
+        WhiteboardProvider,
+        (int, Set<String>, Path?, WhiteboardTool, bool, int, Offset)
     >(
       selector: (context, provider) => (
-        provider.boardVersion,
-        provider.selectedElementIds,
-        provider.lassoPath,
-        provider.currentTool,
-        provider.isDocumentOverlayOpen,
-        provider.overlayCurrentPage,
-        provider.canvasPanOffset,
+      provider.boardVersion,
+      provider.selectedElementIds,
+      provider.lassoPath,
+      provider.currentTool,
+      provider.isDocumentOverlayOpen,
+      provider.overlayCurrentPage,
+      provider.canvasPanOffset,
       ),
       builder: (context, data, _) {
         final provider = context.read<WhiteboardProvider>();
@@ -748,27 +747,17 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                RepaintBoundary(
-                  child: CustomPaint(
-                    isComplex: true,
-                    willChange: false,
-                    foregroundPainter: WhiteboardPainter(
-                      elements: displayElements,
-                      activeElements: const [],
-                      lassoPath: null,
-                      selectedIds: selectedIds,
-                      version: data.$1,
-                      panOffset: panOffset,
-                    ),
-                    size: Size.infinite,
+                IgnorePointer(
+                  ignoring: currentTool != WhiteboardTool.select,
+                  child: RepaintBoundary(
                     child: Transform.translate(
                       offset: panOffset,
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
                           ...displayElements.whereType<ImageElement>().map((
-                            img,
-                          ) {
+                              img,
+                              ) {
                             final rawRect = img.getRawBounds();
                             final visualRect = Rect.fromCenter(
                               center: rawRect.center,
@@ -783,155 +772,179 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                                 -panOffset.dy + screenSize.height + 1000.0;
                             final bool isOffScreen =
                                 visualRect.bottom < viewportTop ||
-                                visualRect.top > viewportBottom;
+                                    visualRect.top > viewportBottom;
 
                             if (isOffScreen && img.isDocumentSlide) {
-                              return Positioned(
-                                left: visualRect.left,
-                                top: visualRect.top,
-                                width: visualRect.width,
-                                height: visualRect.height,
-                                child: Container(
-                                  color: Colors.white,
-                                ),
-                              );
-                            }
-
-                            final bool isPlain =
-                                img.isDocumentSlide ||
-                                img.isTransparent ||
-                                img.imageUrl.contains('smart_obj');
-                            final fit = img.isDocumentSlide ? BoxFit.fill : BoxFit.contain;
-                            final imageWidget = img.imageUrl.startsWith('http')
-                                ? Image.network(
-                                    img.imageUrl,
-                                    fit: fit,
-                                    filterQuality: FilterQuality.high,
-                                    errorBuilder: (c, e, s) => const Icon(
-                                      Icons.broken_image,
-                                      size: 50,
-                                    ),
-                                  )
-                                : Image.file(
-                                    File(img.imageUrl),
-                                    fit: fit,
-                                    filterQuality: FilterQuality.high,
-                                    errorBuilder: (c, e, s) => const Icon(
-                                      Icons.broken_image,
-                                      size: 50,
-                                    ),
-                                  );
-
                             return Positioned(
                               left: visualRect.left,
                               top: visualRect.top,
                               width: visualRect.width,
                               height: visualRect.height,
+                              child: Container(
+                                color: Colors.white,
+                              ),
+                            );
+                          }
+
+                          final bool isPlain =
+                              img.isDocumentSlide ||
+                                  img.isTransparent ||
+                                  img.imageUrl.contains('smart_obj');
+                          final fit = img.isDocumentSlide ? BoxFit.fill : BoxFit.contain;
+                          final imageWidget = img.imageUrl.startsWith('http')
+                              ? Image.network(
+                            img.imageUrl,
+                            fit: fit,
+                            filterQuality: FilterQuality.high,
+                            errorBuilder: (c, e, s) => const Icon(
+                              Icons.broken_image,
+                              size: 50,
+                            ),
+                          )
+                              : Image.file(
+                            File(img.imageUrl),
+                            fit: fit,
+                            filterQuality: FilterQuality.high,
+                            errorBuilder: (c, e, s) => const Icon(
+                              Icons.broken_image,
+                              size: 50,
+                            ),
+                          );
+
+                          return Positioned(
+                            left: visualRect.left,
+                            top: visualRect.top,
+                            width: visualRect.width,
+                            height: visualRect.height,
+                            child: RepaintBoundary(
                               child: Transform.rotate(
                                 angle: img.rotation,
                                 child: isPlain
                                     ? imageWidget
                                     : Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.25,
-                                              ),
-                                              blurRadius: 12,
-                                              offset: const Offset(0, 4),
-                                            ),
-                                          ],
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(
+                                      6,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.25,
                                         ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                          child: imageWidget,
-                                        ),
-                                      ),
-                              ),
-                            );
-                          }),
-                          ...displayElements.whereType<DocumentElement>().map((
-                            doc,
-                          ) {
-                            final rawRect = doc.getRawBounds();
-                            final visualRect = Rect.fromCenter(
-                              center: rawRect.center,
-                              width: rawRect.width * doc.scale,
-                              height: rawRect.height * doc.scale,
-                            );
-
-                            final lowerPath = doc.filePath.toLowerCase();
-                            final lowerName = doc.fileName.toLowerCase();
-                            final isPptx =
-                                lowerPath.endsWith('.pptx') ||
-                                lowerName.endsWith('.pptx') ||
-                                lowerPath.endsWith('.ppt') ||
-                                lowerName.endsWith('.ppt');
-
-                            Widget content;
-                            if (isPptx) {
-                              content = PptxViewer(
-                                file: File(doc.filePath),
-                                size: visualRect.size,
-                                slideIndex: doc.docPage ?? 0,
-                              );
-                            } else {
-                              content = Container(
-                                color: Colors.white,
-                                padding: const EdgeInsets.all(12),
-                                child: Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(
-                                        Icons.description,
-                                        size: 48,
-                                        color: Colors.blueAccent,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        doc.fileName,
-                                        style: const TextStyle(
-                                          color: Colors.black87,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
                                       ),
                                     ],
                                   ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      6,
+                                    ),
+                                    child: imageWidget,
+                                  ),
                                 ),
-                              );
-                            }
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        ...displayElements.whereType<DocumentElement>().map((
+                            doc,
+                            ) {
+                          final rawRect = doc.getRawBounds();
+                          final visualRect = Rect.fromCenter(
+                            center: rawRect.center,
+                            width: rawRect.width * doc.scale,
+                            height: rawRect.height * doc.scale,
+                          );
 
-                            return Positioned(
-                              left: visualRect.left,
-                              top: visualRect.top,
-                              width: visualRect.width,
-                              height: visualRect.height,
+                          final lowerPath = doc.filePath.toLowerCase();
+                          final lowerName = doc.fileName.toLowerCase();
+                          final isPptx =
+                              lowerPath.endsWith('.pptx') ||
+                                  lowerName.endsWith('.pptx') ||
+                                  lowerPath.endsWith('.ppt') ||
+                                  lowerName.endsWith('.ppt');
+
+                          Widget content;
+                          if (isPptx) {
+                            content = PptxViewer(
+                              key: ValueKey('pptx_${doc.id}_${doc.filePath}_${doc.docPage ?? 0}'),
+                              file: File(doc.filePath),
+                              size: visualRect.size,
+                              slideIndex: doc.docPage ?? 0,
+                            );
+                          } else {
+                            content = Container(
+                              color: Colors.white,
+                              padding: const EdgeInsets.all(12),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.description,
+                                      size: 48,
+                                      color: Colors.blueAccent,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      doc.fileName,
+                                      style: const TextStyle(
+                                        color: Colors.black87,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          return Positioned(
+                            left: visualRect.left,
+                            top: visualRect.top,
+                            width: visualRect.width,
+                            height: visualRect.height,
+                            child: RepaintBoundary(
                               child: Transform.rotate(
                                 angle: doc.rotation,
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(4),
-                                  child: content,
+                                    child: content,
+                                  ),
                                 ),
                               ),
                             );
-                          }),
-                        ],
-                      ),
+                          }).toList(),
+                        // Main Board Elements / Completed Pen Strokes Layer
+                        // Positioned AFTER Image & Document elements so pen strokes paint ON TOP of PPT/PDF views
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              isComplex: true,
+                              willChange: false,
+                              painter: WhiteboardPainter(
+                                elements: displayElements,
+                                activeElements: const [],
+                                lassoPath: null,
+                                selectedIds: selectedIds,
+                                version: data.$1,
+                                panOffset: Offset.zero,
+                              ),
+                              size: Size.infinite,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
                 // Live active strokes layer
                 RepaintBoundary(
                   child: ValueListenableBuilder<int>(
@@ -1032,8 +1045,8 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     final freshPointers = _pointerManager.freshTouchPointers();
     final msSincePalm = _pointerManager.lastPalmSeen != null
         ? DateTime.now()
-              .difference(_pointerManager.lastPalmSeen!)
-              .inMilliseconds
+        .difference(_pointerManager.lastPalmSeen!)
+        .inMilliseconds
         : -1;
 
     return Positioned(
@@ -1113,12 +1126,12 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
                 final bool isB =
                     max(p.radiusMajor, p.radiusMinor) >=
                         CanvasPointerManager.kBackhandRadiusMin ||
-                    p.size >= CanvasPointerManager.kBackhandSizeMin;
+                        p.size >= CanvasPointerManager.kBackhandSizeMin;
                 final String reason = isP
                     ? (max(p.radiusMajor, p.radiusMinor) >=
-                              CanvasPointerManager.kPalmRadiusMajorMin
-                          ? "Palm"
-                          : (isB ? "Backhand" : "Size"))
+                    CanvasPointerManager.kPalmRadiusMajorMin
+                    ? "Palm"
+                    : (isB ? "Backhand" : "Size"))
                     : "Finger";
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),

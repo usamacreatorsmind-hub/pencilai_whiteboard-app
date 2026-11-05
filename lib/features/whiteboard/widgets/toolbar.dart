@@ -252,6 +252,21 @@ class WhiteboardToolbar extends StatelessWidget {
                                     },
                                   ),
                                 ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: _PenTypeOption(
+                                    label: 'Text',
+                                    icon: LucideIcons.type,
+                                    color: const Color(0xFF6366F1),
+                                    isSelected:
+                                        provider.currentPenType ==
+                                        PenType.textPen,
+                                    onTap: () {
+                                      provider.setPenType(PenType.textPen);
+                                      setDialogState(() {});
+                                    },
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -365,29 +380,44 @@ class WhiteboardToolbar extends StatelessWidget {
                                 GestureDetector(
                                   onTap: () =>
                                       _showColorPicker(context, provider),
-                                  child: Container(
-                                    width: 25,
-                                    height: 25,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: const Color(0xFFCBD5E1),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Container(
+                                      width: 25,
+                                      height: 25,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: const Color(0xFFCBD5E1),
+                                          width: 1.2,
+                                        ),
+                                        gradient: const SweepGradient(
+                                          colors: [
+                                            Color(0xFFFF0000),
+                                            Color(0xFFFF8800),
+                                            Color(0xFFFFFF00),
+                                            Color(0xFF00FF00),
+                                            Color(0xFF00FFFF),
+                                            Color(0xFF0000FF),
+                                            Color(0xFFFF00FF),
+                                            Color(0xFFFF0000),
+                                          ],
+                                        ),
                                       ),
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Colors.red,
-                                          Colors.green,
-                                          Colors.blue,
-                                          Colors.yellow,
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(6),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.20),
+                                        ),
+                                        child: const Center(
+                                          child: Icon(
+                                            LucideIcons.pipette,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    child: const Icon(
-                                      Icons.colorize,
-                                      size: 12,
-                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
@@ -1387,14 +1417,23 @@ class WhiteboardToolbar extends StatelessWidget {
 
     try {
       final importService = DocumentImportService();
-      final pages = await importService.importDocumentToBoardPages(
+      final progressiveResult = await importService.importDocumentProgressive(
         file: file,
         fileName: fileName,
         targetScreenSize: screenSize,
         bottomToolbarHeight: 65.0,
+        initialBatchSize: 5,
+        isCancelled: () => provider.isBackgroundImportCancelled,
         onProgress: (current, total, status) {
           statusNotifier.value = status;
           progressNotifier.value = current / total.toDouble();
+        },
+        onBatchRendered: (batchSlides, totalRendered, totalPages) {
+          provider.appendDocumentSlidesBatch(
+            batchSlides,
+            totalRendered,
+            totalPages,
+          );
         },
       );
 
@@ -1405,10 +1444,21 @@ class WhiteboardToolbar extends StatelessWidget {
         ).pop(); // Close progress dialog
       }
 
-      if (pages.isNotEmpty) {
-        provider.importPages(pages);
-        provider.setTool(WhiteboardTool.pen);
-      }
+      // Display initial batch (Slides 1 to 5) instantly on canvas!
+      provider.importPages([progressiveResult.initialPage]);
+      provider.setTool(WhiteboardTool.pen);
+
+      // Start background tracking in WhiteboardProvider
+      final initialRendered = progressiveResult.initialPage.elements.length;
+      provider.startBackgroundImport(
+        initialRendered,
+        progressiveResult.totalPages,
+      );
+
+      // Asynchronously process remaining slides in background without blocking UI
+      progressiveResult.backgroundWorker().catchError((e) {
+        debugPrint("Background slide import worker error: $e");
+      });
     } catch (e) {
       if (context.mounted) {
         Navigator.of(
@@ -1712,32 +1762,29 @@ class _ColorButton extends StatelessWidget {
     final isWhite = color.value == Colors.white.value;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 25,
-        height: 25,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isSelected
-                ? Colors.blue
-                : (isWhite ? Colors.grey[400]! : Colors.grey[300]!),
-            width: isSelected ? 2.5 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 3,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: 25,
+          height: 25,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isSelected
+                  ? Colors.blue
+                  : (isWhite ? Colors.grey[400]! : Colors.grey[300]!),
+              width: isSelected ? 2.5 : 1,
             ),
-          ],
+          ),
+          child: isSelected
+              ? Icon(
+                  LucideIcons.check,
+                  color: isWhite ? Colors.black : Colors.white,
+                  size: 13,
+                )
+              : null,
         ),
-        child: isSelected
-            ? Icon(
-                Icons.check,
-                color: isWhite ? Colors.black : Colors.white,
-                size: 14,
-              )
-            : null,
       ),
     );
   }

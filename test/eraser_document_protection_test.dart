@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pencilai_whitebaord_app/features/whiteboard/models/board_page.dart';
 import 'package:pencilai_whitebaord_app/features/whiteboard/models/document_element.dart';
 import 'package:pencilai_whitebaord_app/features/whiteboard/models/image_element.dart';
 import 'package:pencilai_whitebaord_app/features/whiteboard/models/stroke_element.dart';
@@ -117,6 +118,40 @@ void main() {
       final elements = provider.currentPage.elements;
       expect(elements.any((e) => e.id == 'diagram_image_1'), isTrue);
       expect(elements.any((e) => e.id == 'pen_stroke_3'), isFalse);
+    });
+
+    test('Drawing strokes on imported PPT/PDF BoardPage does not throw _TypeError', () {
+      final initialSlides = <ImageElement>[
+        ImageElement(
+          id: 'slide_1',
+          position: Offset.zero,
+          size: const Size(800, 600),
+          imageUrl: '/temp/slide1.png',
+          isDocumentSlide: true,
+        ),
+      ];
+
+      final importedPage = BoardPage(
+        id: 'imported_doc_page',
+        elements: initialSlides,
+      );
+
+      provider.importPages([importedPage]);
+
+      final stroke = StrokeElement(
+        id: 'stroke_over_imported_slide',
+        position: const Offset(200, 200),
+        points: const [
+          Offset(200, 200),
+          Offset(250, 250),
+        ],
+        color: Colors.blue,
+        strokeWidth: 3.0,
+      );
+
+      expect(() => provider.addElement(stroke), returnsNormally);
+      expect(provider.currentPage.elements.length, equals(2));
+      expect(provider.currentPage.elements.last.id, equals('stroke_over_imported_slide'));
     });
   });
 }

@@ -186,6 +186,81 @@ class BoardStorageService {
     }
   }
 
+  /// Renders handwritten strokes in bold black ink on a crisp white background
+  /// at optimal 2.0x high DPI scale with safety margins specifically for instant, high-accuracy ML Kit OCR.
+  Future<String?> captureStrokesForOcr(List<StrokeElement> strokes) async {
+    try {
+      if (strokes.isEmpty) return null;
+
+      Rect bounds = strokes[0].getRawBounds();
+      for (int i = 1; i < strokes.length; i++) {
+        bounds = bounds.expandToInclude(strokes[i].getRawBounds());
+      }
+
+      // Filter out tiny dots, accidental taps, or erased stroke remnants (< 12px size)
+      if (bounds.width < 12.0 && bounds.height < 12.0) return null;
+
+      const double padding = 32.0;
+      final cropRect = Rect.fromLTRB(
+        bounds.left - padding,
+        bounds.top - padding,
+        bounds.right + padding,
+        bounds.bottom + padding,
+      );
+
+      const double dpiScale = 2.0;
+      final int targetW = (cropRect.width * dpiScale).round().clamp(80, 2048);
+      final int targetH = (cropRect.height * dpiScale).round().clamp(80, 2048);
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+
+      // Pure solid white background
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
+        Paint()..color = Colors.white,
+      );
+
+      canvas.scale(dpiScale, dpiScale);
+      canvas.translate(-cropRect.left, -cropRect.top);
+
+      // Render strokes in bold black ink (5.5px width) for maximum OCR contrast
+      final ocrPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = Colors.black
+        ..strokeWidth = 5.5;
+
+      for (var stroke in strokes) {
+        if (stroke.points.length == 1) {
+          canvas.drawCircle(
+            stroke.points[0],
+            2.75,
+            Paint()..color = Colors.black,
+          );
+        } else if (stroke.points.length > 1) {
+          canvas.drawPath(stroke.path, ocrPaint);
+        }
+      }
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(targetW, targetH);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      final tempDir = await getTemporaryDirectory();
+      final filePath =
+          '${tempDir.path}/ocr_bold_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File(filePath);
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      return filePath;
+    } catch (e) {
+      debugPrint('Error capturing strokes for OCR: $e');
+      return null;
+    }
+  }
+
   /// Captures ONLY the selected elements as a cropped image for precise AI Vision OCR
   Future<String?> captureSelectedElementsImage(
     List<BoardElement> selectedElements,

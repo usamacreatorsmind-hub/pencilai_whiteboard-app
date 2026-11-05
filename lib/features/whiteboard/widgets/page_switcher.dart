@@ -12,19 +12,24 @@ class PageSwitcher extends StatelessWidget {
     BuildContext context,
     WhiteboardProvider provider,
   ) {
+    final bool hasDoc = provider.hasDocumentSlides;
+    final String title = hasDoc ? 'Delete Slide?' : 'Delete Page?';
+    final String content = hasDoc
+        ? 'Are you sure you want to delete this slide? This action cannot be undone.'
+        : 'Are you sure you want to delete this page? This action cannot be undone.';
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text(
-          'Delete Page?',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          title,
+          style: const TextStyle(color: Colors.white),
         ),
-        content: const Text(
-          'Are you sure you want to delete this page? This action cannot be undone.',
-          style: TextStyle(color: Colors.grey),
+        content: Text(
+          content,
+          style: const TextStyle(color: Colors.grey),
         ),
-
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -32,7 +37,12 @@ class PageSwitcher extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              provider.deletePage(provider.currentPageIndex);
+              if (hasDoc) {
+                provider.deleteDocumentSlide(
+                    provider.currentDocumentSlideIndex);
+              } else {
+                provider.deletePage(provider.currentPageIndex);
+              }
               Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
@@ -123,13 +133,56 @@ class PageSwitcher extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 color: Colors.black.withValues(alpha: 0.05),
               ),
-              child: Text(
-                '$currentNum / $totalNum',
-                style: TextStyle(
-                  color: const Color(0xFF0F172A),
-                  fontSize: isLargeScreen ? 13 : 12,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$currentNum / $totalNum',
+                    style: TextStyle(
+                      color: const Color(0xFF0F172A),
+                      fontSize: isLargeScreen ? 13 : 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (provider.isBackgroundImporting) ...[
+                    const SizedBox(width: 6),
+                    Tooltip(
+                      message:
+                          'Converting remaining slides in background (${provider.backgroundImportRendered}/${provider.backgroundImportTotal})...',
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF0284C7).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                color: Color(0xFF0284C7),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${provider.backgroundImportRendered}/${provider.backgroundImportTotal}',
+                              style: const TextStyle(
+                                color: Color(0xFF0284C7),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -168,8 +221,8 @@ class PageSwitcher extends StatelessWidget {
             ),
           ),
 
-          // Delete Page Icon
-          if (provider.pages.length > 1) ...[
+          // Delete Page / Slide Icon
+          if (totalNum > 1 || provider.pages.length > 1) ...[
             const SizedBox(width: 6),
             IconButton(
               icon: Icon(

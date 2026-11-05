@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'board_element.dart';
 
-enum PenType { pen, fountainPen, brush, marker, smartPen }
+enum PenType { pen, fountainPen, brush, marker, smartPen, textPen }
 
 class StrokeElement extends BoardElement {
   final List<Offset> points;

@@ -20,6 +20,7 @@ import '../services/ai_service.dart';
 import '../services/board_storage_service.dart';
 import '../services/translation_service.dart';
 import '../services/smart_pen_service.dart';
+import '../services/smart_writing_service.dart';
 import '../widgets/whiteboard_canvas.dart';
 import '../widgets/canvas/canvas_grid_painter.dart';
 import '../widgets/canvas/whiteboard_painter.dart';
@@ -234,6 +235,7 @@ class WhiteboardProvider extends ChangeNotifier {
     PenType.brush: 3.0,
     PenType.marker: 6.0,
     PenType.smartPen: 2.5,
+    PenType.textPen: 2.5,
   };
 
   // Thick Pen Profile Settings (default 3px)
@@ -245,6 +247,7 @@ class WhiteboardProvider extends ChangeNotifier {
     PenType.brush: 5.0,
     PenType.marker: 8.0,
     PenType.smartPen: 3.5,
+    PenType.textPen: 3.5,
   };
 
   bool _isAutoNibDetectionEnabled = true;
@@ -434,6 +437,7 @@ class WhiteboardProvider extends ChangeNotifier {
       case PenType.fountainPen:
       case PenType.brush:
       case PenType.smartPen:
+      case PenType.textPen:
         return 1.0;
     }
   }
@@ -443,6 +447,7 @@ class WhiteboardProvider extends ChangeNotifier {
       case PenType.pen:
       case PenType.fountainPen:
       case PenType.smartPen:
+      case PenType.textPen:
         return _activePenProfile == PenProfile.thin ? 8.0 : 18.0;
       case PenType.brush:
         return _activePenProfile == PenProfile.thin ? 10.0 : 22.0;
@@ -877,6 +882,128 @@ class WhiteboardProvider extends ChangeNotifier {
     }
   }
 
+  void deleteDocumentSlide(int slideIndex) {
+    final docPage = _pages.firstWhere(
+      (p) => p.elements.any((e) => e is ImageElement && e.isDocumentSlide),
+      orElse: () => currentPage,
+    );
+    final docPageIndex = _pages.indexOf(docPage);
+
+    final slides = docPage.elements
+        .whereType<ImageElement>()
+        .where((e) => e.isDocumentSlide)
+        .toList();
+
+    if (slideIndex < 0 || slideIndex >= slides.length) return;
+
+    final slideToRemove = slides[slideIndex];
+    final double removedHeight = slideToRemove.size.height;
+    final double removedTop = slideToRemove.position.dy;
+    final double removedBottom = removedTop + removedHeight;
+
+    final elementsToRemove = docPage.elements.where((e) {
+      if (e.id == slideToRemove.id) return true;
+      if (e is ImageElement && e.isDocumentSlide) return false;
+      final bounds = e.getRawBounds();
+      return bounds.top >= removedTop - 5 && bounds.bottom <= removedBottom + 5;
+    }).toList();
+
+    for (var el in elementsToRemove) {
+      docPage.elements.remove(el);
+    }
+
+    for (var el in docPage.elements) {
+      if (el is ImageElement && el.isDocumentSlide) {
+        if (el.position.dy > removedTop) {
+          el.position = Offset(el.position.dx, el.position.dy - removedHeight);
+          el.invalidateBounds();
+        }
+      } else {
+        final bounds = el.getRawBounds();
+        if (bounds.top >= removedBottom) {
+          el.position = Offset(el.position.dx, el.position.dy - removedHeight);
+          el.invalidateBounds();
+        }
+      }
+    }
+
+    final remainingSlides = docPage.elements
+        .whereType<ImageElement>()
+        .where((e) => e.isDocumentSlide)
+        .toList();
+
+    _boardVersion++;
+
+    if (remainingSlides.isEmpty) {
+      if (_pages.length > 1) {
+        deletePage(docPageIndex);
+      } else {
+        _notify();
+      }
+    } else {
+      int newIndex = slideIndex.clamp(0, remainingSlides.length - 1);
+      jumpToDocumentSlide(newIndex);
+    }
+  }
+
+  bool _isBackgroundImporting = false;
+  int _backgroundImportRendered = 0;
+  int _backgroundImportTotal = 0;
+  bool _backgroundImportCancelled = false;
+
+  bool get isBackgroundImporting => _isBackgroundImporting;
+  int get backgroundImportRendered => _backgroundImportRendered;
+  int get backgroundImportTotal => _backgroundImportTotal;
+  bool get isBackgroundImportCancelled => _backgroundImportCancelled;
+
+  void startBackgroundImport(int initialRendered, int totalPages) {
+    _isBackgroundImporting = initialRendered < totalPages;
+    _backgroundImportRendered = initialRendered;
+    _backgroundImportTotal = totalPages;
+    _backgroundImportCancelled = false;
+    _notify();
+  }
+
+  void appendDocumentSlidesBatch(
+    List<ImageElement> batchSlides,
+    int renderedCount,
+    int totalPages,
+  ) {
+    if (_backgroundImportCancelled) return;
+
+    final docPage = _pages.firstWhere(
+      (p) => p.elements.any((e) => e is ImageElement && e.isDocumentSlide),
+      orElse: () => currentPage,
+    );
+
+    double maxY = 0.0;
+    for (final el in docPage.elements) {
+      if (el is ImageElement && el.isDocumentSlide) {
+        final bottom = el.position.dy + el.size.height;
+        if (bottom > maxY) maxY = bottom;
+      }
+    }
+
+    double currentY = maxY;
+    for (final slide in batchSlides) {
+      slide.position = Offset(0.0, currentY);
+      docPage.elements.add(slide);
+      currentY += slide.size.height;
+    }
+
+    _backgroundImportRendered = renderedCount;
+    _backgroundImportTotal = totalPages;
+    _isBackgroundImporting = renderedCount < totalPages;
+    _boardVersion++;
+    _notify();
+  }
+
+  void cancelBackgroundImport() {
+    _backgroundImportCancelled = true;
+    _isBackgroundImporting = false;
+    _notify();
+  }
+
   void panCanvas(Offset delta, {Size? viewportSize}) {
     if (hasDocumentSlides && viewportSize != null) {
       final maxY = documentMaxY;
@@ -992,12 +1119,12 @@ class WhiteboardProvider extends ChangeNotifier {
   /// Only notifies listeners (toolbar) — does NOT invalidate the board cache,
   /// so switching mid-stroke stays smooth.
   bool applyDetectedNib(PenProfile target, double radius) {
-    if (!_isAutoNibDetectionEnabled || _currentTool != WhiteboardTool.pen)
+    if (!_isAutoNibDetectionEnabled || _currentTool != WhiteboardTool.pen) {
       return false;
+    }
     if (radius > 0) _lastDetectedRadius = radius;
     if (_activePenProfile == target) return false;
     _activePenProfile = target;
-    notifyListeners();
     return true;
   }
 
@@ -1030,6 +1157,9 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void setTool(WhiteboardTool tool) {
+    if (_textPenStrokes.isNotEmpty) {
+      convertTextPenStrokesToText();
+    }
     _currentTool = tool;
     if (tool != WhiteboardTool.select) clearSelection();
     _notify();
@@ -1186,6 +1316,10 @@ class WhiteboardProvider extends ChangeNotifier {
     }
     final command = AddElementCommand(element, _currentPageIndex);
     _executeCommand(command);
+
+    if (element is StrokeElement && element.penType == PenType.textPen) {
+      onTextPenStrokeAdded(element);
+    }
   }
 
   void removeSelectedElements() {
@@ -1736,6 +1870,7 @@ class WhiteboardProvider extends ChangeNotifier {
       // Only pen strokes, drawn shapes, and SmartPen converted doodles are erasable.
       if (element is! StrokeElement &&
           element is! ShapeElement &&
+          element is! TextElement &&
           !(element is ImageElement &&
               element.isSmartPen &&
               !element.isDocumentOrSlide)) {
@@ -1811,6 +1946,19 @@ class WhiteboardProvider extends ChangeNotifier {
           }
           if (hit) replacements[element.id] = const [];
         }
+      } else if (element is TextElement) {
+        samples ??= _sweepSamples(p1, p2, radius);
+        final raw = element.getRawBounds();
+        final effRadius = radius / (element.scale > 0 ? element.scale : 1.0);
+        bool hit = false;
+        for (final s in samples) {
+          final local = _toElementLocal(element, s) - element.position;
+          if ((Offset.zero & raw.size).inflate(effRadius).contains(local)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) replacements[element.id] = const [];
       } else if (element is ImageElement &&
           element.isSmartPen &&
           !element.isDocumentOrSlide) {
@@ -1849,6 +1997,14 @@ class WhiteboardProvider extends ChangeNotifier {
 
     if (_selectedElementIds.isNotEmpty) {
       _selectedElementIds.removeWhere((id) => replacements.containsKey(id));
+    }
+
+    // Synchronize pending _textPenStrokes buffer by removing erased strokes
+    if (_textPenStrokes.isNotEmpty) {
+      _textPenStrokes.removeWhere((stroke) => replacements.containsKey(stroke.id));
+      if (_textPenStrokes.isEmpty) {
+        _textPenDebounceTimer?.cancel();
+      }
     }
 
     _notify(); // poore erase call ke liye sirf ek notify
@@ -2330,4 +2486,55 @@ class WhiteboardProvider extends ChangeNotifier {
     WhiteboardPainter.invalidateCache();
     refreshBoard();
   }
+
+  // --- TEXT PEN (HANDWRITING-TO-TEXT) SYSTEM ---
+  final List<StrokeElement> _textPenStrokes = [];
+  Timer? _textPenDebounceTimer;
+  bool _isTextPenConverting = false;
+
+  bool get isTextPenConverting => _isTextPenConverting;
+
+  void onTextPenStrokeAdded(StrokeElement stroke) {
+    if (stroke.penType != PenType.textPen) return;
+    _textPenStrokes.add(stroke);
+    _restartTextPenTimer();
+  }
+
+  void onTextPenStrokeUp() {
+    if (_textPenStrokes.isNotEmpty) {
+      _restartTextPenTimer();
+    }
+  }
+
+  void _restartTextPenTimer() {
+    _textPenDebounceTimer?.cancel();
+    _textPenDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      convertTextPenStrokesToText();
+    });
+  }
+
+  Future<void> convertTextPenStrokesToText() async {
+    _textPenDebounceTimer?.cancel();
+    if (_textPenStrokes.isEmpty || _isTextPenConverting) return;
+
+    _isTextPenConverting = true;
+    notifyListeners();
+
+    final strokesToConvert = List<StrokeElement>.from(_textPenStrokes);
+    _textPenStrokes.clear();
+
+    try {
+      await SmartWritingService().convertStrokesToFormattedText(
+        this,
+        strokesToConvert,
+        fontFamily: 'Poppins',
+      );
+    } catch (e) {
+      debugPrint('TextPen conversion error: $e');
+    } finally {
+      _isTextPenConverting = false;
+      _notify();
+    }
+  }
 }
+

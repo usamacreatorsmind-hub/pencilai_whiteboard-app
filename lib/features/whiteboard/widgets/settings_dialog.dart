@@ -15,14 +15,16 @@ class SettingsDialog extends StatefulWidget {
 
   const SettingsDialog({super.key, this.initialTab = SettingsTab.main});
 
-  static Future<void> show(BuildContext context, {SettingsTab initialTab = SettingsTab.main}) {
+  static Future<void> show(
+    BuildContext context, {
+    SettingsTab initialTab = SettingsTab.main,
+  }) {
     return showDialog<void>(
       context: context,
       barrierColor: Colors.black54,
       builder: (_) => SettingsDialog(initialTab: initialTab),
     );
   }
-
 
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
@@ -61,7 +63,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     CanvasGridType.crossGrid,
   ];
 
-  static const List<CanvasGridType> _gridRow2 = [CanvasGridType.columns, CanvasGridType.isometric];
+  static const List<CanvasGridType> _gridRow2 = [
+    CanvasGridType.columns,
+    CanvasGridType.isometric,
+  ];
 
   // Dialog dimensions
   static const double _kDialogMaxWidth = 480.0;
@@ -74,7 +79,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _currentTab = widget.initialTab;
   }
 
-  void _openCustomColorPicker(BuildContext context, WhiteboardProvider provider) {
+  void _openCustomColorPicker(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     Color pickerColor = provider.canvasBackgroundColor;
 
     showDialog(
@@ -84,7 +92,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Choose Custom Background Color',
-          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: SingleChildScrollView(
           child: ColorPicker(
@@ -103,7 +115,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text(
               'Done',
-              style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Color(0xFF38BDF8),
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -114,7 +129,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<WhiteboardProvider>();
-    final double dialogWidth = MediaQuery.sizeOf(context).width.clamp(320.0, _kDialogMaxWidth);
+    final double dialogWidth = MediaQuery.sizeOf(
+      context,
+    ).width.clamp(320.0, _kDialogMaxWidth);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -122,14 +139,27 @@ class _SettingsDialogState extends State<SettingsDialog> {
       child: Center(
         child: Container(
           width: dialogWidth,
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.86),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+          ),
           decoration: BoxDecoration(
-            color: const Color(0xFFECEEF2), // Soft light grey frame matching photo
+            color: const Color(
+              0xFFECEEF2,
+            ), // Soft light grey frame matching photo
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.24), blurRadius: 24, offset: const Offset(0, 8))],
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.24),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           padding: const EdgeInsets.all(14),
-          child: AnimatedSwitcher(duration: const Duration(milliseconds: 180), child: _buildCurrentPanel(context, provider)),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: _buildCurrentPanel(context, provider),
+          ),
         ),
       ),
     );
@@ -151,7 +181,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // 1. Background Settings Panel (Exact image UI)
   // -------------------------------------------------------------------------
-  Widget _buildBackgroundPanel(BuildContext context, WhiteboardProvider provider) {
+  Widget _buildBackgroundPanel(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     return Column(
       key: const ValueKey('background_panel'),
       mainAxisSize: MainAxisSize.min,
@@ -168,11 +201,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(LucideIcons.chevronLeft, size: 15, color: Color(0xFF2563EB)),
+                    Icon(
+                      LucideIcons.chevronLeft,
+                      size: 15,
+                      color: Color(0xFF2563EB),
+                    ),
                     SizedBox(width: 2),
                     Text(
                       'Settings',
-                      style: TextStyle(color: Color(0xFF2563EB), fontSize: 13, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: Color(0xFF2563EB),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
@@ -182,12 +223,20 @@ class _SettingsDialogState extends State<SettingsDialog> {
               child: Center(
                 child: Text(
                   'Background',
-                  style: TextStyle(color: Color(0xFF0F172A), fontSize: 15, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
             IconButton(
-              icon: const Icon(LucideIcons.x, size: 17, color: Color(0xFF64748B)),
+              icon: const Icon(
+                LucideIcons.x,
+                size: 17,
+                color: Color(0xFF64748B),
+              ),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Close',
               splashRadius: 14,
@@ -216,7 +265,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -248,9 +300,15 @@ class _SettingsDialogState extends State<SettingsDialog> {
                               _buildRainbowPickerChip(
                                 context,
                                 provider,
-                                isSelected: provider.canvasBackgroundImagePath == null &&
-                                    !themeBackgroundColors.any((c) =>
-                                        c.toARGB32() == provider.canvasBackgroundColor.toARGB32()),
+                                isSelected:
+                                    provider.canvasBackgroundImagePath ==
+                                        null &&
+                                    !themeBackgroundColors.any(
+                                      (c) =>
+                                          c.toARGB32() ==
+                                          provider.canvasBackgroundColor
+                                              .toARGB32(),
+                                    ),
                               ),
                             ],
                           ),
@@ -267,13 +325,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             for (int col = 0; col < 6; col++) ...[
                               Builder(
                                 builder: (context) {
-                                  final color = themeBackgroundColors[row * 6 + col];
-                                  final isSelected = provider.canvasBackgroundImagePath == null &&
-                                      provider.canvasBackgroundColor.toARGB32() == color.toARGB32();
+                                  final color =
+                                      themeBackgroundColors[row * 6 + col];
+                                  final isSelected =
+                                      provider.canvasBackgroundImagePath ==
+                                          null &&
+                                      provider.canvasBackgroundColor
+                                              .toARGB32() ==
+                                          color.toARGB32();
                                   return _buildColorChip(
                                     color: color,
                                     isSelected: isSelected,
-                                    onTap: () => provider.setCanvasBackgroundColor(color),
+                                    onTap: () => provider
+                                        .setCanvasBackgroundColor(color),
                                   );
                                 },
                               ),
@@ -299,7 +363,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -354,15 +421,20 @@ class _SettingsDialogState extends State<SettingsDialog> {
                           _buildGridTile(
                             type: _gridRow2[0],
                             isSelected: provider.canvasGridType == _gridRow2[0],
-                            onTap: () => provider.setCanvasGridType(_gridRow2[0]),
+                            onTap: () =>
+                                provider.setCanvasGridType(_gridRow2[0]),
                           ),
                           _buildGridTile(
                             type: _gridRow2[1],
                             isSelected: provider.canvasGridType == _gridRow2[1],
-                            onTap: () => provider.setCanvasGridType(_gridRow2[1]),
+                            onTap: () =>
+                                provider.setCanvasGridType(_gridRow2[1]),
                           ),
                           for (int i = 0; i < 6; i++)
-                            const SizedBox(width: _kGridTileSize, height: _kGridTileSize),
+                            const SizedBox(
+                              width: _kGridTileSize,
+                              height: _kGridTileSize,
+                            ),
                         ],
                       ),
                     ],
@@ -383,7 +455,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -399,7 +474,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             ),
                           ),
                           Text(
-                            provider.canvasBackgroundImagePath != null ? 'Custom' : 'Background',
+                            provider.canvasBackgroundImagePath != null
+                                ? 'Custom'
+                                : 'Background',
                             style: const TextStyle(
                               color: Color(0xFF64748B),
                               fontSize: 11.5,
@@ -447,8 +524,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // Custom Background Image Picker Button
   // -------------------------------------------------------------------------
-  Widget _buildCustomImagePickerButton(BuildContext context, WhiteboardProvider provider) {
-    final bool hasImage = provider.canvasBackgroundImagePath != null && File(provider.canvasBackgroundImagePath!).existsSync();
+  Widget _buildCustomImagePickerButton(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
+    final bool hasImage =
+        provider.canvasBackgroundImagePath != null &&
+        File(provider.canvasBackgroundImagePath!).existsSync();
 
     return GestureDetector(
       onTap: () => _pickCustomBackgroundImage(context, provider),
@@ -459,15 +541,27 @@ class _SettingsDialogState extends State<SettingsDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: hasImage ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1), width: hasImage ? 2.0 : 1.0),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 3, offset: const Offset(0, 1))],
+          border: Border.all(
+            color: hasImage ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+            width: hasImage ? 2.0 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
         clipBehavior: Clip.antiAlias,
         child: hasImage
             ? Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.file(File(provider.canvasBackgroundImagePath!), fit: BoxFit.cover),
+                  Image.file(
+                    File(provider.canvasBackgroundImagePath!),
+                    fit: BoxFit.cover,
+                  ),
                   Positioned(
                     top: 2,
                     right: 2,
@@ -475,31 +569,55 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       onTap: () => provider.setCanvasBackgroundImagePath(null),
                       child: Container(
                         padding: const EdgeInsets.all(2.5),
-                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.70), shape: BoxShape.circle),
-                        child: const Icon(LucideIcons.x, size: 11, color: Colors.white),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.70),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          LucideIcons.x,
+                          size: 11,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
                 ],
               )
-            : const Center(child: Icon(LucideIcons.plus, size: 22, color: Color(0xFF1E293B))),
+            : const Center(
+                child: Icon(
+                  LucideIcons.plus,
+                  size: 22,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
       ),
     );
   }
 
-  Future<void> _pickCustomBackgroundImage(BuildContext context, WhiteboardProvider provider) async {
+  Future<void> _pickCustomBackgroundImage(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) async {
     try {
-      final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'png', 'bmp']);
-      if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'bmp'],
+      );
+      if (result != null &&
+          result.files.isNotEmpty &&
+          result.files.first.path != null) {
         final path = result.files.first.path!;
         provider.setCanvasBackgroundImagePath(path);
       }
     } catch (e) {
       debugPrint('Error picking custom background image: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to pick background image: $e'), backgroundColor: Colors.redAccent));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick background image: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
     }
   }
@@ -507,7 +625,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // Color Chip Widget
   // -------------------------------------------------------------------------
-  Widget _buildColorChip({required Color color, required bool isSelected, required VoidCallback onTap}) {
+  Widget _buildColorChip({
+    required Color color,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
     final bool isLight = color.computeLuminance() > 0.45;
     final bool isWhiteOrVeryLight = color.computeLuminance() > 0.85;
 
@@ -519,15 +641,29 @@ class _SettingsDialogState extends State<SettingsDialog> {
         height: _kColorChipSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: const Color(0xFF2563EB), width: 1.8) : null,
+          border: isSelected
+              ? Border.all(color: const Color(0xFF2563EB), width: 1.8)
+              : null,
         ),
         padding: EdgeInsets.all(isSelected ? 1.8 : 0.0),
         child: Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: color,
-            border: isWhiteOrVeryLight ? Border.all(color: Colors.black.withValues(alpha: 0.12), width: 0.8) : null,
-            boxShadow: [if (!isSelected) BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 2, offset: const Offset(0, 1))],
+            border: isWhiteOrVeryLight
+                ? Border.all(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    width: 0.8,
+                  )
+                : null,
+            boxShadow: [
+              if (!isSelected)
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
+            ],
           ),
           child: isSelected
               ? Center(
@@ -546,7 +682,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // Rainbow Custom Color Chip Widget
   // -------------------------------------------------------------------------
-  Widget _buildRainbowPickerChip(BuildContext context, WhiteboardProvider provider, {required bool isSelected}) {
+  Widget _buildRainbowPickerChip(
+    BuildContext context,
+    WhiteboardProvider provider, {
+    required bool isSelected,
+  }) {
     return GestureDetector(
       onTap: () => _openCustomColorPicker(context, provider),
       child: AnimatedContainer(
@@ -555,7 +695,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
         height: _kColorChipSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: const Color(0xFF2563EB), width: 1.8) : null,
+          border: isSelected
+              ? Border.all(color: const Color(0xFF2563EB), width: 1.8)
+              : null,
         ),
         padding: EdgeInsets.all(isSelected ? 1.8 : 0.0),
         child: Container(
@@ -574,7 +716,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
               ],
             ),
           ),
-          child: const Center(child: Icon(LucideIcons.pipette, size: 11, color: Colors.white)),
+          child: const Center(
+            child: Icon(LucideIcons.pipette, size: 11, color: Colors.white),
+          ),
         ),
       ),
     );
@@ -583,7 +727,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // Grid Pattern Tile Widget
   // -------------------------------------------------------------------------
-  Widget _buildGridTile({required CanvasGridType type, required bool isSelected, required VoidCallback onTap}) {
+  Widget _buildGridTile({
+    required CanvasGridType type,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -593,9 +741,18 @@ class _SettingsDialogState extends State<SettingsDialog> {
         decoration: BoxDecoration(
           color: const Color(0xFF22262E), // Dark rounded tile background
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: isSelected ? const Color(0xFF2563EB) : Colors.transparent, width: isSelected ? 1.8 : 1.0),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2563EB) : Colors.transparent,
+            width: isSelected ? 1.8 : 1.0,
+          ),
           boxShadow: isSelected
-              ? [BoxShadow(color: const Color(0xFF2563EB).withValues(alpha: 0.35), blurRadius: 4, spreadRadius: 0.5)]
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.35),
+                    blurRadius: 4,
+                    spreadRadius: 0.5,
+                  ),
+                ]
               : null,
         ),
         child: ClipRRect(
@@ -615,14 +772,20 @@ class _SettingsDialogState extends State<SettingsDialog> {
       height: 20,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: isSelected ? const Color(0xFF0D9488) : const Color(0xFF9CA3AF), width: 2.0),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF0D9488) : const Color(0xFF9CA3AF),
+          width: 2.0,
+        ),
       ),
       child: isSelected
           ? Center(
               child: Container(
                 width: 10,
                 height: 10,
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF0D9488)),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFF0D9488),
+                ),
               ),
             )
           : null,
@@ -632,7 +795,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // 2. Main Settings Panel (Matching Photo 1)
   // -------------------------------------------------------------------------
-  Widget _buildMainSettingsPanel(BuildContext context, WhiteboardProvider provider) {
+  Widget _buildMainSettingsPanel(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     return Column(
       key: const ValueKey('main_panel'),
       mainAxisSize: MainAxisSize.min,
@@ -645,10 +811,18 @@ class _SettingsDialogState extends State<SettingsDialog> {
             const SizedBox(width: 28),
             const Text(
               'Settings',
-              style: TextStyle(color: Color(0xFF1F2937), fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Color(0xFF1F2937),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             IconButton(
-              icon: const Icon(LucideIcons.x, size: 20, color: Color(0xFF64748B)),
+              icon: const Icon(
+                LucideIcons.x,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Close',
               splashRadius: 16,
@@ -669,7 +843,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 _buildCardNavigationTile(
                   title: 'Handwriting recognition language',
                   subtitle: provider.selectedHandwritingLanguage,
-                  onTap: () => setState(() => _currentTab = SettingsTab.handwritingLanguage),
+                  onTap: () => setState(
+                    () => _currentTab = SettingsTab.handwritingLanguage,
+                  ),
                 ),
                 const SizedBox(height: 10),
 
@@ -677,7 +853,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 _buildCardNavigationTile(
                   title: 'Translation language',
                   subtitle: 'Manage translation language models.',
-                  onTap: () => setState(() => _currentTab = SettingsTab.translationLanguage),
+                  onTap: () => setState(
+                    () => _currentTab = SettingsTab.translationLanguage,
+                  ),
                 ),
                 const SizedBox(height: 10),
 
@@ -687,7 +865,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   subtitle: provider.canvasBackgroundImagePath != null
                       ? 'Custom Image'
                       : '${provider.canvasBackgroundColorName} • ${provider.canvasGridType == CanvasGridType.none ? "No Grid" : provider.canvasGridType.displayName}',
-                  onTap: () => setState(() => _currentTab = SettingsTab.background),
+                  onTap: () =>
+                      setState(() => _currentTab = SettingsTab.background),
                 ),
               ],
             ),
@@ -697,7 +876,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
     );
   }
 
-  Widget _buildCardNavigationTile({required String title, required String subtitle, required VoidCallback onTap}) {
+  Widget _buildCardNavigationTile({
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -705,7 +888,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -716,14 +905,28 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(color: Color(0xFF1F2937), fontSize: 14.5, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Color(0xFF1F2937),
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 3),
-                  Text(subtitle, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
-            const Icon(LucideIcons.chevronRight, size: 20, color: Color(0xFF9CA3AF)),
+            const Icon(
+              LucideIcons.chevronRight,
+              size: 20,
+              color: Color(0xFF9CA3AF),
+            ),
           ],
         ),
       ),
@@ -733,7 +936,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // 3. Handwriting Recognition Language Panel (Matching Photo 2)
   // -------------------------------------------------------------------------
-  Widget _buildHandwritingLanguagePanel(BuildContext context, WhiteboardProvider provider) {
+  Widget _buildHandwritingLanguagePanel(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     return Column(
       key: const ValueKey('handwriting_lang_panel'),
       mainAxisSize: MainAxisSize.min,
@@ -743,7 +949,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
         Row(
           children: [
             IconButton(
-              icon: const Icon(LucideIcons.chevronLeft, size: 22, color: Color(0xFF0D9488)),
+              icon: const Icon(
+                LucideIcons.chevronLeft,
+                size: 22,
+                color: Color(0xFF0D9488),
+              ),
               onPressed: () => setState(() => _currentTab = SettingsTab.main),
               tooltip: 'Back to Settings',
               padding: EdgeInsets.zero,
@@ -753,11 +963,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
               child: Text(
                 'Handwriting recognition language',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF1F2937), fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Color(0xFF1F2937),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             IconButton(
-              icon: const Icon(LucideIcons.x, size: 20, color: Color(0xFF64748B)),
+              icon: const Icon(
+                LucideIcons.x,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Close',
               padding: EdgeInsets.zero,
@@ -773,20 +991,33 @@ class _SettingsDialogState extends State<SettingsDialog> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: WhiteboardProvider.kHandwritingLanguages.length,
-              separatorBuilder: (ctx, i) => Divider(height: 1, color: const Color(0xFFF1F5F9)),
+              separatorBuilder: (ctx, i) =>
+                  Divider(height: 1, color: const Color(0xFFF1F5F9)),
               itemBuilder: (ctx, index) {
                 final lang = WhiteboardProvider.kHandwritingLanguages[index];
                 final isSelected =
                     provider.selectedHandwritingLanguage == lang.name ||
-                    (lang.id == 'follow_system' && provider.selectedHandwritingLanguage.contains('Follow System'));
-                final isDownloaded = provider.isHandwritingLanguageDownloaded(lang.id);
-                final downloadProgress = provider.handwritingDownloadProgress[lang.id];
+                    (lang.id == 'follow_system' &&
+                        provider.selectedHandwritingLanguage.contains(
+                          'Follow System',
+                        ));
+                final isDownloaded = provider.isHandwritingLanguageDownloaded(
+                  lang.id,
+                );
+                final downloadProgress =
+                    provider.handwritingDownloadProgress[lang.id];
                 final isDownloading = downloadProgress != null;
 
                 return InkWell(
@@ -797,19 +1028,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Please download ${lang.displayName} model first before using.'),
+                          content: Text(
+                            'Please download ${lang.displayName} model first before using.',
+                          ),
                           backgroundColor: const Color(0xFF1F2937),
                           action: SnackBarAction(
                             label: 'Download',
                             textColor: const Color(0xFF38BDF8),
-                            onPressed: () => provider.downloadHandwritingLanguage(lang.id),
+                            onPressed: () =>
+                                provider.downloadHandwritingLanguage(lang.id),
                           ),
                         ),
                       );
                     }
                   },
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
                         _buildRadioCircle(isSelected: isSelected),
@@ -820,7 +1057,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             style: TextStyle(
                               color: const Color(0xFF1F2937),
                               fontSize: 15,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
                             ),
                           ),
                         ),
@@ -828,23 +1067,43 @@ class _SettingsDialogState extends State<SettingsDialog> {
                           SizedBox(
                             width: 22,
                             height: 22,
-                            child: CircularProgressIndicator(value: downloadProgress, strokeWidth: 2.2, color: const Color(0xFF0D9488)),
+                            child: CircularProgressIndicator(
+                              value: downloadProgress,
+                              strokeWidth: 2.2,
+                              color: const Color(0xFF0D9488),
+                            ),
                           )
                         else if (isDownloaded)
                           IconButton(
-                            icon: const Icon(LucideIcons.check, size: 20, color: Color(0xFF10B981)),
-                            onPressed: () => provider.setSelectedHandwritingLanguage(lang.name),
+                            icon: const Icon(
+                              LucideIcons.check,
+                              size: 20,
+                              color: Color(0xFF10B981),
+                            ),
+                            onPressed: () => provider
+                                .setSelectedHandwritingLanguage(lang.name),
                             tooltip: 'Model downloaded',
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                            constraints: const BoxConstraints(
+                              minWidth: 28,
+                              minHeight: 28,
+                            ),
                           )
                         else
                           IconButton(
-                            icon: const Icon(LucideIcons.download, size: 20, color: Color(0xFF64748B)),
-                            onPressed: () => provider.downloadHandwritingLanguage(lang.id),
+                            icon: const Icon(
+                              LucideIcons.download,
+                              size: 20,
+                              color: Color(0xFF64748B),
+                            ),
+                            onPressed: () =>
+                                provider.downloadHandwritingLanguage(lang.id),
                             tooltip: 'Download ${lang.name} model',
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                            constraints: const BoxConstraints(
+                              minWidth: 28,
+                              minHeight: 28,
+                            ),
                           ),
                       ],
                     ),
@@ -861,7 +1120,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
   // -------------------------------------------------------------------------
   // 4. Translation Language Panel (Matching Photo 3)
   // -------------------------------------------------------------------------
-  Widget _buildTranslationLanguagePanel(BuildContext context, WhiteboardProvider provider) {
+  Widget _buildTranslationLanguagePanel(
+    BuildContext context,
+    WhiteboardProvider provider,
+  ) {
     return Column(
       key: const ValueKey('translation_lang_panel'),
       mainAxisSize: MainAxisSize.min,
@@ -871,7 +1133,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
         Row(
           children: [
             IconButton(
-              icon: const Icon(LucideIcons.chevronLeft, size: 22, color: Color(0xFF0D9488)),
+              icon: const Icon(
+                LucideIcons.chevronLeft,
+                size: 22,
+                color: Color(0xFF0D9488),
+              ),
               onPressed: () => setState(() => _currentTab = SettingsTab.main),
               tooltip: 'Back to Settings',
               padding: EdgeInsets.zero,
@@ -881,11 +1147,19 @@ class _SettingsDialogState extends State<SettingsDialog> {
               child: Text(
                 'Translation language',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF1F2937), fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Color(0xFF1F2937),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             IconButton(
-              icon: const Icon(LucideIcons.x, size: 20, color: Color(0xFF64748B)),
+              icon: const Icon(
+                LucideIcons.x,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Close',
               padding: EdgeInsets.zero,
@@ -901,34 +1175,55 @@ class _SettingsDialogState extends State<SettingsDialog> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: TranslationService.supportedLanguages.length,
-              separatorBuilder: (ctx, i) => Divider(height: 1, color: const Color(0xFFF1F5F9)),
+              separatorBuilder: (ctx, i) =>
+                  Divider(height: 1, color: const Color(0xFFF1F5F9)),
               itemBuilder: (ctx, index) {
                 final lang = TranslationService.supportedLanguages[index];
-                final isDownloaded = provider.isTranslationLanguageDownloaded(lang.code);
-                final downloadProgress = provider.translationDownloadProgress[lang.code];
+                final isDownloaded = provider.isTranslationLanguageDownloaded(
+                  lang.code,
+                );
+                final downloadProgress =
+                    provider.translationDownloadProgress[lang.code];
                 final isDownloading = downloadProgress != null;
 
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
                       Expanded(
                         child: Text(
                           lang.nativeName,
-                          style: const TextStyle(color: Color(0xFF1F2937), fontSize: 15, fontWeight: FontWeight.w400),
+                          style: const TextStyle(
+                            color: Color(0xFF1F2937),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                          ),
                         ),
                       ),
                       if (isDownloading)
                         SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(value: downloadProgress, strokeWidth: 2.2, color: const Color(0xFF0D9488)),
+                          child: CircularProgressIndicator(
+                            value: downloadProgress,
+                            strokeWidth: 2.2,
+                            color: const Color(0xFF0D9488),
+                          ),
                         )
                       else if (isDownloaded)
                         Row(
@@ -936,19 +1231,35 @@ class _SettingsDialogState extends State<SettingsDialog> {
                           children: const [
                             Text(
                               'Installed',
-                              style: TextStyle(color: Color(0xFF10B981), fontSize: 11.5, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                color: Color(0xFF10B981),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             SizedBox(width: 4),
-                            Icon(LucideIcons.check, size: 18, color: Color(0xFF10B981)),
+                            Icon(
+                              LucideIcons.check,
+                              size: 18,
+                              color: Color(0xFF10B981),
+                            ),
                           ],
                         )
                       else
                         IconButton(
-                          icon: const Icon(LucideIcons.download, size: 20, color: Color(0xFF64748B)),
-                          onPressed: () => provider.downloadTranslationLanguage(lang),
+                          icon: const Icon(
+                            LucideIcons.download,
+                            size: 20,
+                            color: Color(0xFF64748B),
+                          ),
+                          onPressed: () =>
+                              provider.downloadTranslationLanguage(lang),
                           tooltip: 'Download ${lang.name} model',
                           padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
                         ),
                     ],
                   ),
@@ -997,10 +1308,18 @@ class _GridTilePainter extends CustomPainter {
 
       case CanvasGridType.denseGrid:
         for (double x = 4; x < size.width; x += 4.5) {
-          canvas.drawLine(Offset(x, 0), Offset(x, size.height), linePaint..strokeWidth = 0.5);
+          canvas.drawLine(
+            Offset(x, 0),
+            Offset(x, size.height),
+            linePaint..strokeWidth = 0.5,
+          );
         }
         for (double y = 4; y < size.height; y += 4.5) {
-          canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint..strokeWidth = 0.5);
+          canvas.drawLine(
+            Offset(0, y),
+            Offset(size.width, y),
+            linePaint..strokeWidth = 0.5,
+          );
         }
         break;
 
@@ -1026,7 +1345,9 @@ class _GridTilePainter extends CustomPainter {
             Offset(x, 0),
             Offset(x, size.height),
             Paint()
-              ..color = isMajor ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.25)
+              ..color = isMajor
+                  ? const Color(0xFF38BDF8)
+                  : Colors.white.withValues(alpha: 0.25)
               ..strokeWidth = isMajor ? 0.8 : 0.5,
           );
         }
@@ -1036,7 +1357,9 @@ class _GridTilePainter extends CustomPainter {
             Offset(0, y),
             Offset(size.width, y),
             Paint()
-              ..color = isMajor ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.25)
+              ..color = isMajor
+                  ? const Color(0xFF38BDF8)
+                  : Colors.white.withValues(alpha: 0.25)
               ..strokeWidth = isMajor ? 0.8 : 0.5,
           );
         }
@@ -1076,15 +1399,24 @@ class _GridTilePainter extends CustomPainter {
           canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
         }
         for (double x = 0; x < size.width + 16; x += 7.5) {
-          canvas.drawLine(Offset(x, 0), Offset(x - size.height * 0.6, size.height), linePaint);
-          canvas.drawLine(Offset(x - 16, 0), Offset(x - 16 + size.height * 0.6, size.height), linePaint);
+          canvas.drawLine(
+            Offset(x, 0),
+            Offset(x - size.height * 0.6, size.height),
+            linePaint,
+          );
+          canvas.drawLine(
+            Offset(x - 16, 0),
+            Offset(x - 16 + size.height * 0.6, size.height),
+            linePaint,
+          );
         }
         break;
     }
   }
 
   @override
-  bool shouldRepaint(covariant _GridTilePainter oldDelegate) => oldDelegate.type != type;
+  bool shouldRepaint(covariant _GridTilePainter oldDelegate) =>
+      oldDelegate.type != type;
 }
 
 typedef _GridTileThumbnailPainter = _GridTilePainter;
