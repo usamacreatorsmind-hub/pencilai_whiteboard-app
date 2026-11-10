@@ -61,10 +61,14 @@ class _RulerWidgetState extends State<RulerWidget> {
   static const double _minWidth = 280.0;
   static const double _maxWidth = 4000.0;
 
-  // Interactive Edge Pen Drawing State
+  // Interactive Edge Pen Drawing & Ruler Drag State
+  bool _isDraggingRulerBody = false;
+  bool _isPanPending = false;
   bool _isDrawingEdgeLine = false;
   _ActiveRulerEdge _activeEdge = _ActiveRulerEdge.none;
-  Offset _dragStartPoint = Offset.zero;
+  _ActiveRulerEdge _tentativeEdge = _ActiveRulerEdge.none;
+
+  Offset _dragStartLocalPos = Offset.zero;
   Offset _edgeLineStart = Offset.zero;
   Offset _edgeLineEnd = Offset.zero;
 
@@ -80,26 +84,79 @@ class _RulerWidgetState extends State<RulerWidget> {
 
   void _onRulerPanStart(DragStartDetails d) {
     final localY = d.localPosition.dy;
-    if (localY < _pad + _height / 2) {
-      _activeEdge = _ActiveRulerEdge.top;
+    final topThreshold = _pad + 30.0;
+    final bottomThreshold = _pad + _height - 30.0;
+
+    _dragStartLocalPos = d.localPosition;
+
+    if (localY <= topThreshold) {
+      _isPanPending = true;
+      _isDraggingRulerBody = false;
+      _tentativeEdge = _ActiveRulerEdge.top;
+      _isDrawingEdgeLine = false;
+      _activeEdge = _ActiveRulerEdge.none;
+    } else if (localY >= bottomThreshold) {
+      _isPanPending = true;
+      _isDraggingRulerBody = false;
+      _tentativeEdge = _ActiveRulerEdge.bottom;
+      _isDrawingEdgeLine = false;
+      _activeEdge = _ActiveRulerEdge.none;
     } else {
-      _activeEdge = _ActiveRulerEdge.bottom;
+      // Touching scale body (middle area) -> drag/move ruler
+      _isPanPending = false;
+      _isDraggingRulerBody = true;
+      _tentativeEdge = _ActiveRulerEdge.none;
+      _isDrawingEdgeLine = false;
+      _activeEdge = _ActiveRulerEdge.none;
     }
-    final edgeY = _activeEdge == _ActiveRulerEdge.top ? _pad : _pad + _height;
-    final x = (d.localPosition.dx - _pad).clamp(0.0, _width - _RulerPainter.endPadding);
-    _dragStartPoint = Offset(_pad + x, edgeY);
-    _edgeLineStart = _dragStartPoint;
-    _edgeLineEnd = _dragStartPoint;
-    _isDrawingEdgeLine = true;
-    setState(() {});
   }
 
   void _onRulerPanUpdate(DragUpdateDetails d) {
-    final edgeY = _activeEdge == _ActiveRulerEdge.top ? _pad : _pad + _height;
-    final x1 = (_dragStartPoint.dx - _pad).clamp(0.0, _width - _RulerPainter.endPadding);
-    final x2 = (d.localPosition.dx - _pad).clamp(0.0, _width - _RulerPainter.endPadding);
-    _edgeLineStart = Offset(_pad + x1, edgeY);
-    _edgeLineEnd = Offset(_pad + x2, edgeY);
+    if (_isDraggingRulerBody) {
+      setState(() {
+        _position += d.delta;
+      });
+      return;
+    }
+
+    final minX = _pad;
+    final maxX = _pad + _width - _RulerPainter.endPadding;
+
+    if (_isPanPending) {
+      final dx = (d.localPosition.dx - _dragStartLocalPos.dx).abs();
+      final dy = (d.localPosition.dy - _dragStartLocalPos.dy).abs();
+      final dist = sqrt(dx * dx + dy * dy);
+
+      if (dist > 3.0) {
+        _isPanPending = false;
+        if (dx >= dy) {
+          // Drawing line along top or bottom ruler edge
+          _isDrawingEdgeLine = true;
+          _activeEdge = _tentativeEdge;
+          final edgeY = _activeEdge == _ActiveRulerEdge.top ? _pad : _pad + _height;
+          final x1 = _dragStartLocalPos.dx.clamp(minX, maxX);
+          final x2 = d.localPosition.dx.clamp(minX, maxX);
+          _edgeLineStart = Offset(x1, edgeY);
+          _edgeLineEnd = Offset(x2, edgeY);
+        } else {
+          // Dragging ruler body away from edge
+          _isDraggingRulerBody = true;
+          _isDrawingEdgeLine = false;
+          _activeEdge = _ActiveRulerEdge.none;
+          setState(() {
+            _position += d.delta;
+          });
+          return;
+        }
+      }
+    } else if (_isDrawingEdgeLine && _activeEdge != _ActiveRulerEdge.none) {
+      final edgeY = _activeEdge == _ActiveRulerEdge.top ? _pad : _pad + _height;
+      final x1 = _dragStartLocalPos.dx.clamp(minX, maxX);
+      final x2 = d.localPosition.dx.clamp(minX, maxX);
+      _edgeLineStart = Offset(x1, edgeY);
+      _edgeLineEnd = Offset(x2, edgeY);
+    }
+
     setState(() {});
   }
 
@@ -114,14 +171,20 @@ class _RulerWidgetState extends State<RulerWidget> {
         cb([p1, p2]);
       }
     }
+    _isDraggingRulerBody = false;
+    _isPanPending = false;
     _isDrawingEdgeLine = false;
     _activeEdge = _ActiveRulerEdge.none;
+    _tentativeEdge = _ActiveRulerEdge.none;
     setState(() {});
   }
 
   void _onRulerPanCancel() {
+    _isDraggingRulerBody = false;
+    _isPanPending = false;
     _isDrawingEdgeLine = false;
     _activeEdge = _ActiveRulerEdge.none;
+    _tentativeEdge = _ActiveRulerEdge.none;
     setState(() {});
   }
 

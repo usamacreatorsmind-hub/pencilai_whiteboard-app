@@ -80,13 +80,17 @@ class AiService {
 
         final res = await http.post(
           uri,
-          headers: {'Content-Type': 'application/json', 'x-goog-api-key': apiKey},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
           body: requestBody,
         );
 
         if (res.statusCode == 200) {
           final data = jsonDecode(utf8.decode(res.bodyBytes));
-          final resParts = data['candidates']?[0]?['content']?['parts'] as List?;
+          final resParts =
+              data['candidates']?[0]?['content']?['parts'] as List?;
           final text = resParts?.map((p) => p['text'] ?? '').join('').trim();
           return (text == null || text.isEmpty)
               ? (isOcr ? '' : 'No $label generated.')
@@ -95,7 +99,8 @@ class AiService {
 
         // If 404 (model deprecated or not found for this tier), try next candidate model
         if (res.statusCode == 404) {
-          lastError = 'Error generating $label (${res.statusCode}): ${utf8.decode(res.bodyBytes)}';
+          lastError =
+              'Error generating $label (${res.statusCode}): ${utf8.decode(res.bodyBytes)}';
           continue;
         }
 
