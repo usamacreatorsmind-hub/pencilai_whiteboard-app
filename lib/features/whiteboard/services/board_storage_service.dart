@@ -19,9 +19,10 @@ import '../models/shape_element.dart';
 import '../models/text_element.dart';
 import '../models/chemical_element_element.dart';
 import '../widgets/canvas/chemical_element_drawer.dart';
+import '../widgets/canvas/shape_drawer.dart';
 
 class BoardStorageService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   FirebaseStorage get _storage {
     try {
@@ -119,236 +120,356 @@ class BoardStorageService {
     }
   }
 
-  /// Captures ONLY the selected elements and returns downscaled PNG bytes directly in memory
-  Future<Uint8List?> captureSelectedElementsBytes(
-    List<BoardElement> selectedElements, {
-    double maxDimension = 600.0,
+  /// Transforms [point] from [element]'s local coordinates into canvas coordinates
+  /// using [element]'s rotation and scale around its raw bounding box center.
+  Offset transformElementPoint(BoardElement element, Offset point) {
+    if (element.rotation == 0.0 && element.scale == 1.0) {
+      return point;
+    }
+
+    final center = element.getRawBounds().center;
+    final cosA = cos(element.rotation);
+    final sinA = sin(element.rotation);
+    final d = point - center;
+    return center +
+        Offset(d.dx * cosA - d.dy * sinA, d.dx * sinA + d.dy * cosA) *
+            element.scale;
+  }
+
+  /// Computes the axis-aligned visual bounding box of [element], accounting for
+  /// rotation, scale, and stroke width around its raw center.
+  Rect getElementVisualBounds(BoardElement element) {
+    final rawBounds = element.getRawBounds();
+    final double extraRadius = (element is StrokeElement)
+        ? (element.strokeWidth * element.scale * 0.5)
+        : (element is ShapeElement)
+        ? (element.strokeWidth * element.scale * 0.5)
+        : 0.0;
+
+    if (element.rotation == 0.0 && element.scale == 1.0) {
+      return extraRadius > 0 ? rawBounds.inflate(extraRadius) : rawBounds;
+    }
+
+    final corners = [
+      transformElementPoint(element, rawBounds.topLeft),
+      transformElementPoint(element, rawBounds.topRight),
+      transformElementPoint(element, rawBounds.bottomRight),
+      transformElementPoint(element, rawBounds.bottomLeft),
+    ];
+
+    double minX = corners[0].dx;
+    double maxX = corners[0].dx;
+    double minY = corners[0].dy;
+    double maxY = corners[0].dy;
+    for (int i = 1; i < corners.length; i++) {
+      minX = min(minX, corners[i].dx);
+      maxX = max(maxX, corners[i].dx);
+      minY = min(minY, corners[i].dy);
+      maxY = max(maxY, corners[i].dy);
+    }
+
+    final transformed = Rect.fromLTRB(minX, minY, maxX, maxY);
+    return extraRadius > 0 ? transformed.inflate(extraRadius) : transformed;
+  }
+
+  /// Returns the combined visual bounding box across all [elements], or null if empty.
+  Rect? getCombinedVisualBounds(List<BoardElement> elements) {
+    if (elements.isEmpty) return null;
+    Rect bounds = getElementVisualBounds(elements[0]);
+    for (int i = 1; i < elements.length; i++) {
+      bounds = bounds.expandToInclude(getElementVisualBounds(elements[i]));
+    }
+    return bounds;
+  }
+
+  void _withElementTransform(
+    Canvas canvas,
+    BoardElement element,
+    void Function() draw,
+  ) {
+    final hasTransform = element.rotation != 0.0 || element.scale != 1.0;
+    if (!hasTransform) {
+      draw();
+      return;
+    }
+
+    canvas.save();
+    final center = element.getRawBounds().center;
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(element.rotation);
+    canvas.scale(element.scale);
+    canvas.translate(-center.dx, -center.dy);
+    draw();
+    canvas.restore();
+  }
+
+  Color _ocrContrastColor(Color color) {
+    // Ensure white, pastel, or low-alpha ink from dark themes stays readable on white.
+    if (color.a < 0.55 || color.computeLuminance() > 0.65) {
+      return Colors.black;
+    }
+    return color.a < 1.0 ? color.withValues(alpha: 1.0) : color;
+  }
+
+  Future<Uint8List?> _renderCroppedWhiteboardPng({
+    required Rect bounds,
+    required double padding,
+    required double desiredScale,
+    required double maxDimension,
+    required int minTargetDimension,
+    required void Function(Canvas canvas) drawContent,
+  }) async {
+    if (bounds.width < 0 ||
+        bounds.height < 0 ||
+        (bounds.width == 0 && bounds.height == 0)) {
+      return null;
+    }
+
+    final cropRect = bounds.inflate(padding);
+    final double originalW = cropRect.width;
+    final double originalH = cropRect.height;
+    if (originalW <= 0 || originalH <= 0) return null;
+
+    // Fit longest side within maxDimension while preserving aspect ratio cleanly.
+    final double longestSide = max(originalW, originalH);
+    final double scale = min(desiredScale, maxDimension / longestSide);
+    final double drawW = originalW * scale;
+    final double drawH = originalH * scale;
+
+    final int targetW = max(minTargetDimension, drawW.ceil());
+    final int targetH = max(minTargetDimension, drawH.ceil());
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
+      Paint()..color = Colors.white,
+    );
+
+    canvas.translate((targetW - drawW) * 0.5, (targetH - drawH) * 0.5);
+    canvas.scale(scale, scale);
+    canvas.translate(-cropRect.left, -cropRect.top);
+
+    drawContent(canvas);
+
+    final picture = recorder.endRecording();
+    ui.Image? image;
+    try {
+      image = await picture
+          .toImage(targetW, targetH)
+          .timeout(const Duration(seconds: 3));
+      final byteData = await image
+          .toByteData(format: ui.ImageByteFormat.png)
+          .timeout(const Duration(seconds: 3));
+      return byteData?.buffer.asUint8List();
+    } finally {
+      image?.dispose();
+      picture.dispose();
+    }
+  }
+
+  /// Writes PNG [bytes] into a temporary file for platform OCR SDKs and returns its path.
+  Future<String?> writeTempOcrImage(
+    Uint8List bytes, {
+    String prefix = 'ocr_bold',
   }) async {
     try {
-      if (selectedElements.isEmpty) return null;
-
-      // 1. Calculate combined bounding box of selected elements
-      Rect bounds = selectedElements[0].getRawBounds();
-      for (int i = 1; i < selectedElements.length; i++) {
-        bounds = bounds.expandToInclude(selectedElements[i].getRawBounds());
-      }
-
-      if (bounds.width <= 0 || bounds.height <= 0) return null;
-
-      const double padding = 16.0;
-      final cropRect = Rect.fromLTRB(
-        bounds.left - padding,
-        bounds.top - padding,
-        bounds.right + padding,
-        bounds.bottom + padding,
+      final tempDir = await getTemporaryDirectory().timeout(
+        const Duration(seconds: 4),
       );
+      final filePath =
+          '${tempDir.path}/${prefix}_${DateTime.now().microsecondsSinceEpoch}.png';
+      final file = File(filePath);
+      await file
+          .writeAsBytes(bytes, flush: true)
+          .timeout(const Duration(seconds: 4));
+      return filePath;
+    } catch (e) {
+      debugPrint('Error writing temp OCR image: $e');
+      return null;
+    }
+  }
 
-      final double originalW = cropRect.width;
-      final double originalH = cropRect.height;
-      if (originalW <= 0 || originalH <= 0) return null;
+  /// Captures ONLY the selected elements and returns high-contrast PNG bytes directly in memory.
+  Future<Uint8List?> captureSelectedElementsBytes(
+    List<BoardElement> selectedElements, {
+    double maxDimension = 1200.0,
+  }) async {
+    try {
+      final bounds = getCombinedVisualBounds(selectedElements);
+      if (bounds == null) return null;
 
-      // Scale down large strokes so OCR doesn't transfer megabytes of unnecessary pixels
-      final double longestSide = max(originalW, originalH);
-      final double scale = longestSide > maxDimension
-          ? maxDimension / longestSide
-          : 1.0;
-
-      final int targetW = (originalW * scale).round().clamp(20, 1024);
-      final int targetH = (originalH * scale).round().clamp(20, 1024);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      // 1. Draw crisp white background
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
-        Paint()..color = Colors.white,
+      return await _renderCroppedWhiteboardPng(
+        bounds: bounds,
+        padding: 24.0,
+        desiredScale: 2.0,
+        maxDimension: maxDimension,
+        minTargetDimension: 48,
+        drawContent: (canvas) {
+          for (final element in selectedElements) {
+            _drawElementOnCanvas(canvas, element);
+          }
+        },
       );
-
-      // 2. Scale and translate canvas
-      canvas.scale(scale, scale);
-      canvas.translate(-cropRect.left, -cropRect.top);
-
-      // 3. Render ONLY selected elements
-      for (var element in selectedElements) {
-        _drawElementOnCanvas(canvas, element);
-      }
-
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(targetW, targetH);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return null;
-
-      return byteData.buffer.asUint8List();
     } catch (e) {
       debugPrint('Error capturing selected elements bytes: $e');
       return null;
     }
   }
 
-  /// Renders handwritten strokes in bold black ink on a crisp white background
-  /// at optimal 2.0x high DPI scale with safety margins specifically for instant, high-accuracy ML Kit OCR.
-  Future<String?> captureStrokesForOcr(List<StrokeElement> strokes) async {
+  /// Renders handwritten strokes in high-contrast black ink on a crisp white
+  /// background without clipping wide sentences or blobbing small letters.
+  Future<Uint8List?> captureStrokesForOcrBytes(
+    List<StrokeElement> strokes,
+  ) async {
     try {
       if (strokes.isEmpty) return null;
 
-      Rect bounds = strokes[0].getRawBounds();
-      for (int i = 1; i < strokes.length; i++) {
-        bounds = bounds.expandToInclude(strokes[i].getRawBounds());
-      }
+      final bounds = getCombinedVisualBounds(strokes);
+      if (bounds == null) return null;
 
-      // Filter out tiny dots, accidental taps, or erased stroke remnants (< 12px size)
-      if (bounds.width < 12.0 && bounds.height < 12.0) return null;
+      // Filter out tiny dots, accidental taps, or erased stroke remnants (< 10px spread).
+      if (bounds.width < 10.0 && bounds.height < 10.0) return null;
 
-      const double padding = 32.0;
-      final cropRect = Rect.fromLTRB(
-        bounds.left - padding,
-        bounds.top - padding,
-        bounds.right + padding,
-        bounds.bottom + padding,
+      // Compute adaptive stroke thickness from median glyph height so small
+      // Devanagari/Latin loops stay open while large writing remains bold.
+      final heights =
+          strokes
+              .map((s) => getElementVisualBounds(s).height)
+              .where((h) => h >= 12.0)
+              .toList()
+            ..sort();
+      final double medianStrokeHeight =
+          (heights.isEmpty ? bounds.height : heights[heights.length ~/ 2])
+              .clamp(12.0, 400.0);
+      final double minVisualWidth = (medianStrokeHeight * 0.055).clamp(
+        2.0,
+        10.0,
       );
-
-      const double dpiScale = 2.0;
-      final int targetW = (cropRect.width * dpiScale).round().clamp(80, 2048);
-      final int targetH = (cropRect.height * dpiScale).round().clamp(80, 2048);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-
-      // Pure solid white background
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, targetW.toDouble(), targetH.toDouble()),
-        Paint()..color = Colors.white,
+      final double maxVisualWidth = (medianStrokeHeight * 0.11).clamp(
+        3.0,
+        16.0,
       );
+      final double targetVisualWidth = (medianStrokeHeight * 0.075).clamp(
+        minVisualWidth,
+        maxVisualWidth,
+      );
+      final double adaptiveScale = (72.0 / medianStrokeHeight).clamp(1.5, 3.5);
+      final double adaptivePadding = max(
+        36.0,
+        medianStrokeHeight * 0.45,
+      ).clamp(36.0, 72.0);
 
-      canvas.scale(dpiScale, dpiScale);
-      canvas.translate(-cropRect.left, -cropRect.top);
-
-      // Render strokes in bold black ink (5.5px width) for maximum OCR contrast
-      final ocrPaint = Paint()
+      final fillPaint = Paint()..color = Colors.black;
+      final strokePaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = Colors.black
-        ..strokeWidth = 5.5;
+        ..color = Colors.black;
 
-      for (var stroke in strokes) {
-        if (stroke.points.length == 1) {
-          canvas.drawCircle(
-            stroke.points[0],
-            2.75,
-            Paint()..color = Colors.black,
-          );
-        } else if (stroke.points.length > 1) {
-          canvas.drawPath(stroke.path, ocrPaint);
-        }
-      }
+      return await _renderCroppedWhiteboardPng(
+        bounds: bounds,
+        padding: adaptivePadding,
+        desiredScale: adaptiveScale,
+        maxDimension: 1280.0,
+        minTargetDimension: 128,
+        drawContent: (canvas) {
+          for (final stroke in strokes) {
+            final double effectiveScale = stroke.scale > 0 ? stroke.scale : 1.0;
+            final double visualWidth = (stroke.strokeWidth * effectiveScale)
+                .clamp(targetVisualWidth, maxVisualWidth);
+            final double localWidth = visualWidth / effectiveScale;
 
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(targetW, targetH);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return null;
-
-      final tempDir = await getTemporaryDirectory();
-      final filePath =
-          '${tempDir.path}/ocr_bold_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File(filePath);
-      await file.writeAsBytes(byteData.buffer.asUint8List());
-      return filePath;
+            _withElementTransform(canvas, stroke, () {
+              if (stroke.points.length == 1) {
+                canvas.drawCircle(
+                  stroke.points[0],
+                  max(localWidth * 0.65, 1.5),
+                  fillPaint,
+                );
+              } else if (stroke.points.length > 1) {
+                strokePaint.strokeWidth = localWidth;
+                canvas.drawPath(stroke.path, strokePaint);
+              }
+            });
+          }
+        },
+      );
     } catch (e) {
-      debugPrint('Error capturing strokes for OCR: $e');
+      debugPrint('Error capturing strokes for OCR bytes: $e');
       return null;
     }
+  }
+
+  /// Renders handwritten strokes in bold black ink on a crisp white background
+  /// and saves to a temporary PNG file for on-device ML Kit OCR.
+  Future<String?> captureStrokesForOcr(List<StrokeElement> strokes) async {
+    final bytes = await captureStrokesForOcrBytes(strokes);
+    if (bytes == null) return null;
+    return writeTempOcrImage(bytes, prefix: 'ocr_bold');
   }
 
   /// Captures ONLY the selected elements as a cropped image for precise AI Vision OCR
   Future<String?> captureSelectedElementsImage(
     List<BoardElement> selectedElements,
   ) async {
-    try {
-      final bytes = await captureSelectedElementsBytes(selectedElements);
-      if (bytes == null) return null;
-
-      final tempDir = await getTemporaryDirectory();
-      final path =
-          '${tempDir.path}/selected_crop_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File(path);
-      await file.writeAsBytes(bytes);
-      return path;
-    } catch (e) {
-      debugPrint('Error capturing selected elements image: $e');
-      return null;
-    }
+    final bytes = await captureSelectedElementsBytes(selectedElements);
+    if (bytes == null) return null;
+    return writeTempOcrImage(bytes, prefix: 'selected_crop');
   }
 
   void _drawElementOnCanvas(Canvas canvas, BoardElement element) {
-    if (element is StrokeElement) {
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = element.color
-        ..strokeWidth = element.strokeWidth;
+    _withElementTransform(canvas, element, () {
+      if (element is StrokeElement) {
+        final inkColor = _ocrContrastColor(element.color);
+        final paint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..color = inkColor
+          ..strokeWidth = element.strokeWidth;
 
-      if (element.points.length == 1) {
-        canvas.drawCircle(
-          element.points[0],
-          element.strokeWidth / 2,
-          Paint()..color = element.color,
+        if (element.points.length == 1) {
+          canvas.drawCircle(
+            element.points[0],
+            element.strokeWidth / 2,
+            Paint()..color = inkColor,
+          );
+        } else if (element.points.length > 1) {
+          canvas.drawPath(element.path, paint);
+        }
+      } else if (element is TextElement) {
+        final inkColor = _ocrContrastColor(element.color);
+        final textSpan = TextSpan(
+          text: element.text,
+          style: TextStyle(
+            color: inkColor,
+            fontSize: element.fontSize,
+            fontWeight: FontWeight.w600,
+            fontFamily: element.fontFamily,
+          ),
         );
-      } else if (element.points.length > 1) {
-        canvas.drawPath(element.path, paint);
-      }
-    } else if (element is TextElement) {
-      final textSpan = TextSpan(
-        text: element.text,
-        style: TextStyle(
-          color: element.color,
-          fontSize: element.fontSize,
-          fontWeight: FontWeight.w600,
-          fontFamily: element.fontFamily,
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, element.position);
-    } else if (element is ShapeElement) {
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = element.color
-        ..strokeWidth = element.strokeWidth;
+        final textPainter = TextPainter(
+          text: textSpan,
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        textPainter.paint(canvas, element.position);
+      } else if (element is ShapeElement) {
+        final inkColor = _ocrContrastColor(element.color);
+        final paint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..color = inkColor
+          ..strokeWidth = element.strokeWidth;
 
-      switch (element.shapeType) {
-        case ShapeType.line:
-          canvas.drawLine(element.position, element.endPoint, paint);
-          break;
-        case ShapeType.rectangle:
-          canvas.drawRect(
-            Rect.fromPoints(element.position, element.endPoint),
-            paint,
-          );
-          break;
-        case ShapeType.circle:
-          canvas.drawOval(
-            Rect.fromPoints(element.position, element.endPoint),
-            paint,
-          );
-          break;
-        default:
-          canvas.drawRect(
-            Rect.fromPoints(element.position, element.endPoint),
-            paint,
-          );
-          break;
+        ShapeDrawer.drawShape(canvas, element, paint);
+      } else if (element is ChemicalElementElement) {
+        ChemicalElementDrawer.draw(canvas, element);
       }
-    } else if (element is ChemicalElementElement) {
-      ChemicalElementDrawer.draw(canvas, element);
-    }
+    });
   }
 
   Future<String?> exportToPdf(GlobalKey boundaryKey) async {
@@ -456,7 +577,6 @@ class BoardStorageService {
           }
         }
       }
-
     } catch (e) {
       debugPrint('Error compiling multi-page PDF: $e');
       rethrow;

@@ -66,3 +66,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Bundle offline Devanagari ML Kit text recognition (Hindi & Marathi)
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+}

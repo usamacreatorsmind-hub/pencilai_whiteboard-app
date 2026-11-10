@@ -188,10 +188,27 @@ class ShapeDrawer {
   }
 
   static void drawArrow(Canvas canvas, Offset start, Offset end, Paint paint) {
-    final path = Path()
-      ..moveTo(start.dx, start.dy)
-      ..lineTo(end.dx, end.dy);
-    canvas.drawPath(path, paint);
+    final delta = end - start;
+    final length = delta.distance;
+    canvas.drawLine(start, end, paint);
+    if (length < 8.0) return;
+
+    final double headLen = (length * 0.16).clamp(10.0, 24.0);
+    final double angle = delta.direction;
+    const double wingAngle = 0.48;
+    final p1 = Offset(
+      end.dx - headLen * cos(angle - wingAngle),
+      end.dy - headLen * sin(angle - wingAngle),
+    );
+    final p2 = Offset(
+      end.dx - headLen * cos(angle + wingAngle),
+      end.dy - headLen * sin(angle + wingAngle),
+    );
+    final headPath = Path()
+      ..moveTo(p1.dx, p1.dy)
+      ..lineTo(end.dx, end.dy)
+      ..lineTo(p2.dx, p2.dy);
+    canvas.drawPath(headPath, paint);
   }
 
   static void drawTriangle(Canvas canvas, Offset start, Offset end, Paint paint) {

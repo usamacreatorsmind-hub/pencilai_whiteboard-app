@@ -1005,87 +1005,161 @@ class WhiteboardToolbar extends StatelessWidget {
             ),
             content: SizedBox(
               width: 290,
-              height: 180,
+              height: 228,
               child: TabBarView(
                 children: [
                   // 2D Shapes Tab
-                  GridView.count(
-                    crossAxisCount: 4,
-                    mainAxisSpacing: 2,
-                    crossAxisSpacing: 2,
-                    childAspectRatio: 1.2,
+                  Column(
                     children: [
-                      _ShapeTile(
-                        name: 'Line',
-                        type: ShapeType.line,
-                        icon: LucideIcons.minus,
-                        provider: provider,
+                      // Free-Style Auto Shape toggle banner
+                      Builder(
+                        builder: (ctx) {
+                          final bool isFreeStyleSelected =
+                              provider.currentTool == WhiteboardTool.shape &&
+                              provider.isFreeStyleShape;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: InkWell(
+                              onTap: () {
+                                provider.enableFreeStyleShapeMode();
+                                Navigator.pop(context);
+                              },
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isFreeStyleSelected
+                                      ? const Color(
+                                          0xFF38BDF8,
+                                        ).withValues(alpha: 0.22)
+                                      : Colors.white.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isFreeStyleSelected
+                                        ? const Color(0xFF38BDF8)
+                                        : Colors.white.withValues(alpha: 0.14),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      LucideIcons.wand2,
+                                      size: 16,
+                                      color: isFreeStyleSelected
+                                          ? const Color(0xFF38BDF8)
+                                          : Colors.white70,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Free Style Shape (Auto Convert)',
+                                        style: TextStyle(
+                                          color: isFreeStyleSelected
+                                              ? const Color(0xFF38BDF8)
+                                              : Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isFreeStyleSelected)
+                                      const Icon(
+                                        LucideIcons.check,
+                                        size: 14,
+                                        color: Color(0xFF38BDF8),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      _ShapeTile(
-                        name: 'Rect',
-                        type: ShapeType.rectangle,
-                        icon: LucideIcons.square,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Circle',
-                        type: ShapeType.circle,
-                        icon: LucideIcons.circle,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Arrow',
-                        type: ShapeType.arrow,
-                        icon: LucideIcons.moveRight,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Triangle',
-                        type: ShapeType.triangle,
-                        icon: LucideIcons.triangle,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Star',
-                        type: ShapeType.star,
-                        icon: LucideIcons.star,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Diamond',
-                        type: ShapeType.diamond,
-                        icon: LucideIcons.gem,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Pentagon',
-                        type: ShapeType.pentagon,
-                        icon: LucideIcons.pentagon,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Hexagon',
-                        type: ShapeType.hexagon,
-                        icon: LucideIcons.hexagon,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Right Tri',
-                        type: ShapeType.rightTriangle,
-                        icon: LucideIcons.triangleRight,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Parallelogram',
-                        type: ShapeType.parallelogram,
-                        icon: LucideIcons.boxSelect,
-                        provider: provider,
-                      ),
-                      _ShapeTile(
-                        name: 'Heart',
-                        type: ShapeType.heart,
-                        icon: LucideIcons.heart,
-                        provider: provider,
+                      Expanded(
+                        child: GridView.count(
+                          crossAxisCount: 4,
+                          mainAxisSpacing: 2,
+                          crossAxisSpacing: 2,
+                          childAspectRatio: 1.2,
+                          children: [
+                            _ShapeTile(
+                              name: 'Line',
+                              type: ShapeType.line,
+                              icon: LucideIcons.minus,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Rect',
+                              type: ShapeType.rectangle,
+                              icon: LucideIcons.square,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Circle',
+                              type: ShapeType.circle,
+                              icon: LucideIcons.circle,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Arrow',
+                              type: ShapeType.arrow,
+                              icon: LucideIcons.moveRight,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Triangle',
+                              type: ShapeType.triangle,
+                              icon: LucideIcons.triangle,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Star',
+                              type: ShapeType.star,
+                              icon: LucideIcons.star,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Diamond',
+                              type: ShapeType.diamond,
+                              icon: LucideIcons.gem,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Pentagon',
+                              type: ShapeType.pentagon,
+                              icon: LucideIcons.pentagon,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Hexagon',
+                              type: ShapeType.hexagon,
+                              icon: LucideIcons.hexagon,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Right Tri',
+                              type: ShapeType.rightTriangle,
+                              icon: LucideIcons.triangleRight,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Parallelogram',
+                              type: ShapeType.parallelogram,
+                              icon: LucideIcons.boxSelect,
+                              provider: provider,
+                            ),
+                            _ShapeTile(
+                              name: 'Heart',
+                              type: ShapeType.heart,
+                              icon: LucideIcons.heart,
+                              provider: provider,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1602,7 +1676,9 @@ class WhiteboardToolbar extends StatelessWidget {
             // Shape & Extras Group
             _ToolButton(
               icon: provider.currentTool == WhiteboardTool.shape
-                  ? _getShapeIcon(provider.currentShapeType)
+                  ? (provider.isFreeStyleShape
+                        ? LucideIcons.wand2
+                        : _getShapeIcon(provider.currentShapeType))
                   : LucideIcons.shapes,
               label: 'Shape',
               isActive: provider.currentTool == WhiteboardTool.shape,
@@ -1936,6 +2012,7 @@ class _ShapeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isSelected =
         provider.currentTool == WhiteboardTool.shape &&
+        !provider.isFreeStyleShape &&
         provider.currentShapeType == type;
     return InkWell(
       onTap: () {

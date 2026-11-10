@@ -14,8 +14,10 @@ import '../state/whiteboard_provider.dart';
 import 'translation_dialog.dart';
 
 class ObjectHandles extends StatefulWidget {
-  const ObjectHandles({super.key});
+  const ObjectHandles({super.key, this.smartWritingService});
 
+  @visibleForTesting
+  final SmartWritingService? smartWritingService;
 
   @override
   State<ObjectHandles> createState() => _ObjectHandlesState();
@@ -101,21 +103,103 @@ class _ObjectHandlesState extends State<ObjectHandles> {
 
   bool _isSearching = false;
   bool _isConvertingSmartWriting = false;
+  int _smartWriteOpId = 0;
+  Set<String>? _convertingSelectionIds;
+  WhiteboardProvider? _listenedProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final provider = Provider.of<WhiteboardProvider>(context, listen: false);
+    if (_listenedProvider != provider) {
+      _listenedProvider?.removeListener(_onProviderChanged);
+      _listenedProvider = provider;
+      _listenedProvider!.addListener(_onProviderChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    _listenedProvider?.removeListener(_onProviderChanged);
+    _smartWriteOpId++;
+    super.dispose();
+  }
+
+  bool _sameIdSet(Set<String> a, Set<String> b) {
+    return a.length == b.length && a.containsAll(b);
+  }
+
+  void _onProviderChanged() {
+    if (!mounted || !_isConvertingSmartWriting) return;
+    final currentIds = _listenedProvider?.selectedElementIds;
+    final converting = _convertingSelectionIds;
+    if (currentIds == null ||
+        currentIds.isEmpty ||
+        converting == null ||
+        !_sameIdSet(currentIds, converting)) {
+      _smartWriteOpId++;
+      setState(() {
+        _isConvertingSmartWriting = false;
+        _convertingSelectionIds = null;
+      });
+    }
+  }
 
   Future<void> _triggerSmartWriting(
     BuildContext context,
     WhiteboardProvider provider,
   ) async {
     if (_isConvertingSmartWriting) return;
-    setState(() => _isConvertingSmartWriting = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final opId = ++_smartWriteOpId;
+    setState(() {
+      _isConvertingSmartWriting = true;
+      _convertingSelectionIds = Set<String>.from(provider.selectedElementIds);
+    });
 
     try {
-      await SmartWritingService().convertSelectedStrokesToText(provider);
+      final smartWriting = widget.smartWritingService ?? SmartWritingService();
+      final converted = await smartWriting
+          .convertSelectedStrokesToText(provider)
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              smartWriting.lastErrorMessage ??=
+                  'SmartWrite timed out. Please try again.';
+              return false;
+            },
+          );
+      if (!mounted || _smartWriteOpId != opId) return;
+
+      if (!converted && messenger != null) {
+        final message =
+            smartWriting.lastErrorMessage ??
+            'Could not convert selected handwriting to text.';
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('Smart writing error: $e');
+      if (mounted && _smartWriteOpId == opId && messenger != null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('SmartWrite failed. Please try again.'),
+            backgroundColor: Colors.redAccent,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     } finally {
-      if (mounted) {
-        setState(() => _isConvertingSmartWriting = false);
+      if (mounted && _smartWriteOpId == opId) {
+        setState(() {
+          _isConvertingSmartWriting = false;
+          _convertingSelectionIds = null;
+        });
       }
     }
   }

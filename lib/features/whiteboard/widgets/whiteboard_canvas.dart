@@ -12,6 +12,7 @@ import '../models/image_element.dart';
 import '../models/mind_map_element.dart';
 import '../models/shape_element.dart';
 import '../models/stroke_element.dart';
+import '../services/free_style_shape_recognizer.dart';
 import '../state/whiteboard_provider.dart';
 import 'canvas/canvas_pointer_manager.dart';
 import 'canvas/whiteboard_painter.dart';
@@ -41,6 +42,18 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   bool _displayCacheOverlay = false;
   int _displayCachePage = -1;
   int _displayCacheLen = -1;
+
+  // Select-tool tap vs. lasso drag state
+  static const double _kLassoDragSlop = 8.0;
+  int? _selectPointerId;
+  Offset? _selectDownPos;
+  bool _selectLassoActive = false;
+
+  void _resetSelectTracking() {
+    _selectPointerId = null;
+    _selectDownPos = null;
+    _selectLassoActive = false;
+  }
 
   @override
   void initState() {
@@ -157,6 +170,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _pointerManager.lastSeen[event.pointer] = DateTime.now();
     _pointerManager.pointerDownTimes[event.pointer] = DateTime.now();
     _pointerManager.pointers[event.pointer] = event;
+    provider.syncActiveTextPenPointers(_pointerManager.pointers.keys.toSet());
 
     if (CanvasPointerManager.kDebugPointerInfo) {
       debugPrint(
@@ -220,26 +234,19 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     if (provider.currentTool == WhiteboardTool.select) {
-      if (_pointerManager.activeElements.isEmpty) {
-        final hit = provider.hitTest(localPos);
-        if (hit != null) {
-          if (hit is MindMapElement) {
-            final n = hit.nodeAt(_mmLocal(hit, localPos));
-            if (n != null && hit.selectedNodeId != n.id) {
-              hit.selectedNodeId = n.id;
-              provider.refreshBoard();
-            }
-          }
-          provider.selectElement(
-            hit.id,
-            multi: provider.selectedElementIds.contains(hit.id),
-          );
-        } else {
-          _pointerManager.currentLasso = Path()
-            ..moveTo(localPos.dx, localPos.dy);
-          provider.clearSelection();
-          _pointerManager.requestRepaint(mounted);
+      if (_pointerManager.pointers.length > 1) {
+        if (!_selectLassoActive) {
+          _resetSelectTracking();
         }
+        return;
+      }
+      if (!_pointerManager.isPalm(event) &&
+          _pointerManager.activeElements.isEmpty) {
+        _selectPointerId = pointerId;
+        _selectDownPos = localPos;
+        _selectLassoActive = false;
+        _pointerManager.currentLasso = null;
+        provider.setLassoPath(null);
       }
       return;
     }
@@ -273,16 +280,32 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         penType: provider.currentPenType,
         docPage: docPage,
       );
+      if (provider.currentPenType == PenType.textPen &&
+          !_pointerManager.isPalm(event)) {
+        provider.onTextPenPointerDown(pointerId);
+      }
     } else if (provider.currentTool == WhiteboardTool.shape) {
-      _pointerManager.activeElements[pointerId] = ShapeElement(
-        id: id,
-        position: localPos,
-        shapeType: provider.currentShapeType,
-        endPoint: localPos,
-        color: provider.currentColor,
-        strokeWidth: provider.strokeWidth,
-        docPage: docPage,
-      );
+      if (provider.isFreeStyleShape) {
+        _pointerManager.activeElements[pointerId] = StrokeElement(
+          id: id,
+          position: localPos,
+          points: [localPos],
+          color: provider.currentColor,
+          strokeWidth: provider.strokeWidth,
+          penType: PenType.pen,
+          docPage: docPage,
+        );
+      } else {
+        _pointerManager.activeElements[pointerId] = ShapeElement(
+          id: id,
+          position: localPos,
+          shapeType: provider.currentShapeType,
+          endPoint: localPos,
+          color: provider.currentColor,
+          strokeWidth: provider.strokeWidth,
+          docPage: docPage,
+        );
+      }
     }
     _pointerManager.requestRepaint(mounted);
   }
@@ -438,15 +461,33 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
           newStrokeWidth: provider.strokeWidth,
           newPenType: provider.currentPenType,
         );
+        if (active.penType == PenType.textPen &&
+            !_pointerManager.isPalm(event)) {
+          provider.onTextPenPointerDown(pointerId);
+        } else {
+          provider.onTextPenPointerUp(pointerId);
+        }
         _pointerManager.requestRepaint(mounted);
       }
     }
 
     if (provider.currentTool == WhiteboardTool.select &&
-        _pointerManager.currentLasso != null) {
-      _pointerManager.currentLasso!.lineTo(localPos.dx, localPos.dy);
-      provider.setLassoPath(_pointerManager.currentLasso);
-      _pointerManager.requestRepaint(mounted);
+        pointerId == _selectPointerId &&
+        _selectDownPos != null) {
+      if (!_selectLassoActive &&
+          (localPos - _selectDownPos!).distance > _kLassoDragSlop) {
+        _selectLassoActive = true;
+        _pointerManager.currentLasso = Path()
+          ..moveTo(_selectDownPos!.dx, _selectDownPos!.dy)
+          ..lineTo(localPos.dx, localPos.dy);
+        provider.clearSelection();
+        provider.setLassoPath(_pointerManager.currentLasso);
+        _pointerManager.requestRepaint(mounted);
+      } else if (_selectLassoActive && _pointerManager.currentLasso != null) {
+        _pointerManager.currentLasso!.lineTo(localPos.dx, localPos.dy);
+        provider.setLassoPath(_pointerManager.currentLasso);
+        _pointerManager.requestRepaint(mounted);
+      }
       return;
     }
 
@@ -492,6 +533,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       _pointerManager.panPointerId = null;
     }
     _pointerManager.forgetPointer(pointerId);
+    if (_pointerManager.pointers.isEmpty) {
+      provider.clearActiveTextPenPointers();
+    }
     _forgetNib(pointerId);
 
     if (!_pointerManager.hasTouchDown() ||
@@ -504,11 +548,33 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     }
 
     if (provider.currentTool == WhiteboardTool.select) {
-      if (_pointerManager.currentLasso != null) {
-        final lasso = _pointerManager.currentLasso!;
-        lasso.close();
-        provider.completeLassoSelection(lasso);
-        _pointerManager.currentLasso = null;
+      if (pointerId == _selectPointerId) {
+        if (_selectLassoActive && _pointerManager.currentLasso != null) {
+          final lasso = _pointerManager.currentLasso!;
+          lasso.close();
+          provider.completeLassoSelection(lasso);
+          _pointerManager.currentLasso = null;
+        } else {
+          final tapPos =
+              _selectDownPos ?? _pointerManager.getCanvasLocalPos(event, context);
+          final hit = provider.hitTest(tapPos);
+          if (hit != null) {
+            if (hit is MindMapElement) {
+              final n = hit.nodeAt(_mmLocal(hit, tapPos));
+              if (n != null && hit.selectedNodeId != n.id) {
+                hit.selectedNodeId = n.id;
+                provider.refreshBoard();
+              }
+            }
+            provider.selectElement(
+              hit.id,
+              multi: provider.selectedElementIds.contains(hit.id),
+            );
+          } else {
+            provider.clearSelection();
+          }
+        }
+        _resetSelectTracking();
       }
       _pointerManager.requestRepaint(mounted);
       return;
@@ -526,8 +592,15 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             _pointerManager.isUsingGestureEraser ||
             (isQuickPalm &&
                 (element is! StrokeElement || element.points.length <= 2));
+    final bool isTextPenDot =
+        element is StrokeElement &&
+        element.penType == PenType.textPen &&
+        element.points.length == 1 &&
+        !isQuickPalm &&
+        !_pointerManager.isPalm(event);
     if (element != null && !dropElement) {
-      if (element is StrokeElement && element.points.length > 1) {
+      if (element is StrokeElement &&
+          (element.points.length > 1 || isTextPenDot)) {
         element.invalidatePath();
 
         if (mmTarget != null) {
@@ -541,14 +614,26 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
             );
             mm.selectedNodeId = node.id;
             element.disposeLive();
+            provider.onTextPenPointerUp(pointerId);
             provider.refreshBoard();
             _pointerManager.requestRepaint(mounted);
             return;
           }
         }
 
-        provider.addElement(element);
-        WhiteboardPainter.appendElementToCache(element, provider.boardVersion);
+        final BoardElement elementToAdd =
+            (provider.currentTool == WhiteboardTool.shape &&
+                provider.isFreeStyleShape)
+            ? (FreeStyleShapeRecognizer.recognize(element) ?? element)
+            : element;
+        if (!identical(elementToAdd, element)) {
+          element.disposeLive();
+        }
+        provider.addElement(elementToAdd);
+        WhiteboardPainter.appendElementToCache(
+          elementToAdd,
+          provider.boardVersion,
+        );
 
         if (element.penType == PenType.smartPen && !element.isDotOrTap) {
           provider.setActiveSmartPenStroke(element);
@@ -567,6 +652,10 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     } else if (element is StrokeElement) {
       element.disposeLive();
     }
+    provider.onTextPenPointerUp(pointerId);
+    if (_pointerManager.pointers.isEmpty) {
+      provider.clearActiveTextPenPointers();
+    }
     _pointerManager.requestRepaint(mounted);
   }
 
@@ -574,6 +663,7 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     _pointerManager.pruneStalePointers(force: true);
     _pointerManager.cancelEventCount++;
     final pointerId = event.pointer;
+    provider.onTextPenPointerUp(pointerId);
     _forgetNib(pointerId);
     final localPos = _pointerManager.getCanvasLocalPos(event, context);
 
@@ -616,9 +706,14 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
       _pointerManager.panPointerId = null;
     }
     _pointerManager.forgetPointer(pointerId);
+    if (_pointerManager.pointers.isEmpty) {
+      provider.clearActiveTextPenPointers();
+    }
 
     if (provider.currentTool == WhiteboardTool.select &&
-        _pointerManager.currentLasso != null) {
+        (pointerId == _selectPointerId ||
+            _pointerManager.currentLasso != null)) {
+      _resetSelectTracking();
       _pointerManager.currentLasso = null;
       provider.setLassoPath(null);
     }

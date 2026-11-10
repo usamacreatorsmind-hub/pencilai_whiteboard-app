@@ -66,8 +66,16 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
       List<ConnectivityResult> results,
     ) {
       final connected = !results.contains(ConnectivityResult.none);
-      if (mounted && _isConnected != connected) {
-        setState(() => _isConnected = connected);
+      if (mounted) {
+        if (_isConnected != connected) {
+          setState(() => _isConnected = connected);
+        }
+        if (connected) {
+          Provider.of<WhiteboardProvider>(
+            context,
+            listen: false,
+          ).onConnectivityRestored();
+        }
       }
     });
 
@@ -808,6 +816,61 @@ class _WhiteboardScreenState extends State<WhiteboardScreen> {
                   ),
                   const ObjectHandles(),
                   const SmartPenSuggestionWidget(),
+                  Consumer<WhiteboardProvider>(
+                    builder: (context, p, _) {
+                      if (!p.isTextPenConverting) {
+                        return const SizedBox.shrink();
+                      }
+                      return Positioned(
+                        top: 14,
+                        left: 0,
+                        right: 0,
+                        child: IgnorePointer(
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF38BDF8),
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Converting text...',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   const AiFloatingMenuWidget(),
                   const AiResultPanel(),
                   if (_isSidebarOpen) ...[

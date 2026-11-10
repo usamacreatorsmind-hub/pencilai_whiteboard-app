@@ -1016,32 +1016,15 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 final isDownloaded = provider.isHandwritingLanguageDownloaded(
                   lang.id,
                 );
+                final isBundledOffline = provider
+                    .hasBundledOfflineHandwritingSupport(lang.id);
                 final downloadProgress =
                     provider.handwritingDownloadProgress[lang.id];
                 final isDownloading = downloadProgress != null;
 
                 return InkWell(
-                  onTap: () {
-                    if (isDownloaded) {
-                      provider.setSelectedHandwritingLanguage(lang.name);
-                    } else if (!isDownloading) {
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Please download ${lang.displayName} model first before using.',
-                          ),
-                          backgroundColor: const Color(0xFF1F2937),
-                          action: SnackBarAction(
-                            label: 'Download',
-                            textColor: const Color(0xFF38BDF8),
-                            onPressed: () =>
-                                provider.downloadHandwritingLanguage(lang.id),
-                          ),
-                        ),
-                      );
-                    }
-                  },
+                  onTap: () =>
+                      provider.setSelectedHandwritingLanguage(lang.name),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -1052,15 +1035,42 @@ class _SettingsDialogState extends State<SettingsDialog> {
                         _buildRadioCircle(isSelected: isSelected),
                         const SizedBox(width: 14),
                         Expanded(
-                          child: Text(
-                            lang.nativeName,
-                            style: TextStyle(
-                              color: const Color(0xFF1F2937),
-                              fontSize: 15,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  lang.nativeName,
+                                  style: TextStyle(
+                                    color: const Color(0xFF1F2937),
+                                    fontSize: 15,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                  ),
+                                ),
+                              ),
+                              if (isBundledOffline) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFECFDF5),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Offline',
+                                    style: TextStyle(
+                                      color: Color(0xFF047857),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         if (isDownloading)
@@ -1082,7 +1092,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             ),
                             onPressed: () => provider
                                 .setSelectedHandwritingLanguage(lang.name),
-                            tooltip: 'Model downloaded',
+                            tooltip: 'Digital Ink model downloaded',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                               minWidth: 28,
@@ -1098,7 +1108,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             ),
                             onPressed: () =>
                                 provider.downloadHandwritingLanguage(lang.id),
-                            tooltip: 'Download ${lang.name} model',
+                            tooltip: isBundledOffline
+                                ? 'Download ${lang.name} cursive model (optional)'
+                                : 'Download ${lang.name} offline model',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                               minWidth: 28,

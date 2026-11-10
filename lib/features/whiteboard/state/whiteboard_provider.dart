@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -111,6 +112,40 @@ class ReplaceElementCommand extends Command {
     final idx = elements.indexWhere((e) => e.id == newElement.id);
     if (idx != -1) {
       elements[idx] = oldElement;
+    }
+  }
+}
+
+/// Atomically replaces multiple elements (e.g. handwritten strokes) with a
+/// single element so SmartWrite / TextPen conversions undo in one step.
+class ReplaceElementsCommand extends Command {
+  final List<BoardElement> oldElements;
+  final BoardElement newElement;
+  final int pageIndex;
+  ReplaceElementsCommand(this.oldElements, this.newElement, this.pageIndex);
+
+  @override
+  void execute(WhiteboardProvider provider) {
+    final elements = provider.pages[pageIndex].elements;
+    final ids = oldElements.map((e) => e.id).toSet();
+    final firstIdx = elements.indexWhere((e) => ids.contains(e.id));
+    elements.removeWhere((e) => ids.contains(e.id));
+    if (firstIdx >= 0 && firstIdx <= elements.length) {
+      elements.insert(firstIdx, newElement);
+    } else {
+      elements.add(newElement);
+    }
+  }
+
+  @override
+  void undo(WhiteboardProvider provider) {
+    final elements = provider.pages[pageIndex].elements;
+    final idx = elements.indexWhere((e) => e.id == newElement.id);
+    if (idx != -1) {
+      elements.removeAt(idx);
+      elements.insertAll(idx, oldElements);
+    } else {
+      elements.addAll(oldElements);
     }
   }
 }
@@ -256,6 +291,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
   double _eraserSize = 60.0;
   ShapeType _currentShapeType = ShapeType.rectangle;
+  bool _isFreeStyleShape = false;
 
   final Set<String> _selectedElementIds = {};
   Path? _lassoPath;
@@ -384,7 +420,7 @@ class WhiteboardProvider extends ChangeNotifier {
   bool _automaticBrightness = false;
 
   String _selectedHandwritingLanguage = 'Follow System (English)';
-  final Set<String> _downloadedHandwritingLanguages = {'follow_system', 'en'};
+  final Set<String> _downloadedHandwritingLanguages = {};
   final Map<String, double> _handwritingDownloadProgress = {};
 
   final Set<String> _downloadedTranslationLanguages = {'en'};
@@ -403,6 +439,7 @@ class WhiteboardProvider extends ChangeNotifier {
   BoardPage get currentPage => _pages[_currentPageIndex];
   int get boardVersion => _boardVersion;
   WhiteboardTool get currentTool => _currentTool;
+  bool get isFreeStyleShape => _isFreeStyleShape;
 
   PenProfile get activePenProfile => _activePenProfile;
   Color get thinColor => _thinColor;
@@ -534,7 +571,7 @@ class WhiteboardProvider extends ChangeNotifier {
       Map.unmodifiable(_handwritingDownloadProgress);
   List<HandwritingLanguageItem> get downloadedHandwritingLanguageItems =>
       kHandwritingLanguages
-          .where((l) => _downloadedHandwritingLanguages.contains(l.id))
+          .where((l) => isHandwritingLanguageReady(l.id))
           .toList();
 
   Set<String> get downloadedTranslationLanguages =>
@@ -564,6 +601,20 @@ class WhiteboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Returns true if [langIdOrName] has bundled on-device ML Kit text recognition
+  /// (e.g., English, Hindi/Devanagari, Marathi, Spanish, French, German).
+  bool hasBundledOfflineHandwritingSupport(String langIdOrName) {
+    final bcp = SmartWritingService.resolveHandwritingBcpCode(langIdOrName);
+    return SmartWritingService.textRecognitionScriptForBcp(bcp) != null;
+  }
+
+  /// Returns true if [langIdOrName] can be used right away offline (either via
+  /// bundled ML Kit text recognition or a downloaded Digital Ink model).
+  bool isHandwritingLanguageReady(String langIdOrName) {
+    return hasBundledOfflineHandwritingSupport(langIdOrName) ||
+        isHandwritingLanguageDownloaded(langIdOrName);
+  }
+
   bool isHandwritingLanguageDownloaded(String langIdOrName) {
     if (_downloadedHandwritingLanguages.contains(langIdOrName)) return true;
     final item = kHandwritingLanguages.firstWhere(
@@ -588,21 +639,178 @@ class WhiteboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> downloadHandwritingLanguage(String langId) async {
-    if (_downloadedHandwritingLanguages.contains(langId)) return;
-    _handwritingDownloadProgress[langId] = 0.15;
+  Future<bool> downloadHandwritingLanguage(String langId) async {
+    if (_downloadedHandwritingLanguages.contains(langId)) return true;
+    _handwritingDownloadProgress[langId] = 0.2;
     notifyListeners();
 
-    for (int p = 30; p <= 100; p += 25) {
-      await Future.delayed(const Duration(milliseconds: 250));
-      _handwritingDownloadProgress[langId] = p / 100.0;
+    bool ok = false;
+    try {
+      final downloadFuture = SmartWritingService()
+          .downloadHandwritingLanguageModel(langId);
+      _handwritingDownloadProgress[langId] = 0.55;
+      notifyListeners();
+
+      ok = await downloadFuture;
+      if (ok) {
+        _downloadedHandwritingLanguages.add(langId);
+        if (langId == 'en' || langId == 'follow_system') {
+          _downloadedHandwritingLanguages.add('en');
+          _downloadedHandwritingLanguages.add('follow_system');
+        }
+        _saveSettings();
+      }
+    } catch (e) {
+      debugPrint('Handwriting model download failed ($langId): $e');
+    } finally {
+      _handwritingDownloadProgress.remove(langId);
       notifyListeners();
     }
+    return ok;
+  }
 
-    _downloadedHandwritingLanguages.add(langId);
-    _handwritingDownloadProgress.remove(langId);
-    _saveSettings();
-    notifyListeners();
+  Future<void> checkDownloadedHandwritingModels() async {
+    try {
+      bool changed = false;
+      final sw = Stopwatch()..start();
+      for (final lang in kHandwritingLanguages) {
+        if (lang.id == 'follow_system') continue;
+        sw.reset();
+        final downloaded = await SmartWritingService()
+            .isHandwritingModelDownloaded(lang.bcpCode);
+        if (sw.elapsedMilliseconds >= 1500 && !downloaded) {
+          // Stop probing if the native Digital Ink manager is slow/unresponsive.
+          break;
+        }
+        if (downloaded) {
+          if (_downloadedHandwritingLanguages.add(lang.id)) changed = true;
+        } else {
+          if (_downloadedHandwritingLanguages.remove(lang.id)) changed = true;
+        }
+      }
+      if (_downloadedHandwritingLanguages.contains('en')) {
+        if (_downloadedHandwritingLanguages.add('follow_system')) {
+          changed = true;
+        }
+      } else {
+        if (_downloadedHandwritingLanguages.remove('follow_system')) {
+          changed = true;
+        }
+      }
+      if (changed && !_isDisposed) notifyListeners();
+    } catch (_) {}
+  }
+
+  Timer? _hindiPreloadTimer;
+  bool _isDisposed = false;
+  bool _isPreloadingHandwritingPacks = false;
+  int _backgroundPreloadAttempts = 0;
+
+  Future<bool> _hasNetworkConnection() async {
+    try {
+      final results = await Connectivity()
+          .checkConnectivity()
+          .timeout(const Duration(seconds: 2));
+      return results.any((r) => r != ConnectivityResult.none);
+    } on MissingPluginException {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  void _scheduleSilentHandwritingPreload({
+    Duration delay = const Duration(seconds: 3),
+  }) {
+    if (_isDisposed) return;
+    if (_downloadedHandwritingLanguages.contains('hi') &&
+        _downloadedHandwritingLanguages.contains('en')) {
+      return;
+    }
+    if (_backgroundPreloadAttempts >= 2) return;
+
+    _hindiPreloadTimer?.cancel();
+    _hindiPreloadTimer = Timer(delay, () {
+      unawaited(ensureDefaultHandwritingPacksInBackground());
+    });
+  }
+
+  /// Called when network connectivity returns so missing Hindi/English packs
+  /// finish downloading in the background without blocking drawing.
+  void onConnectivityRestored() {
+    if (_isDisposed) return;
+    if (_downloadedHandwritingLanguages.contains('hi') &&
+        _downloadedHandwritingLanguages.contains('en')) {
+      return;
+    }
+    _backgroundPreloadAttempts = 0;
+    _scheduleSilentHandwritingPreload(delay: const Duration(seconds: 1));
+  }
+
+  /// Silently ensures the offline Hindi ('hi') and English ('en') Digital Ink
+  /// models are downloaded in the background on fresh installs with zero UI lag.
+  Future<void> ensureDefaultHandwritingPacksInBackground({
+    Future<bool> Function(String bcpCode)? downloadedChecker,
+    Future<bool> Function()? connectivityChecker,
+    Future<bool> Function(String langId)? downloader,
+  }) async {
+    if (_isDisposed || _isPreloadingHandwritingPacks) return;
+    _isPreloadingHandwritingPacks = true;
+    bool countedAttempt = false;
+
+    try {
+      for (final langId in const ['hi', 'en']) {
+        if (_isDisposed) return;
+        if (_downloadedHandwritingLanguages.contains(langId)) continue;
+
+        final already =
+            await (downloadedChecker?.call(langId) ??
+                SmartWritingService().isHandwritingModelDownloaded(langId));
+        if (_isDisposed) return;
+        if (already) {
+          _markHandwritingPackReady(langId);
+          continue;
+        }
+
+        final hasNet =
+            await (connectivityChecker?.call() ?? _hasNetworkConnection());
+        if (_isDisposed || !hasNet) return;
+
+        if (!countedAttempt) {
+          if (_backgroundPreloadAttempts >= 2) return;
+          _backgroundPreloadAttempts++;
+          countedAttempt = true;
+        }
+
+        final ok =
+            await (downloader?.call(langId) ??
+                SmartWritingService().downloadHandwritingLanguageModel(
+                  langId,
+                  timeout: const Duration(seconds: 60),
+                ));
+        if (_isDisposed) return;
+        if (ok) {
+          _markHandwritingPackReady(langId);
+        }
+      }
+    } catch (e) {
+      debugPrint('Background handwriting pack preload note: $e');
+    } finally {
+      _isPreloadingHandwritingPacks = false;
+    }
+  }
+
+  void _markHandwritingPackReady(String langId) {
+    bool changed = _downloadedHandwritingLanguages.add(langId);
+    if (langId == 'en' || langId == 'follow_system') {
+      if (_downloadedHandwritingLanguages.add('en')) changed = true;
+      if (_downloadedHandwritingLanguages.add('follow_system')) changed = true;
+    }
+    if (changed && !_isDisposed) {
+      SmartWritingService().clearDigitalInkCooldown();
+      _saveSettings();
+      notifyListeners();
+    }
   }
 
   bool isTranslationLanguageDownloaded(String code) {
@@ -691,9 +899,12 @@ class WhiteboardProvider extends ChangeNotifier {
             (map['downloadedTranslationLanguages'] as List).cast<String>(),
           );
         }
-        notifyListeners();
+        if (!_isDisposed) notifyListeners();
       }
+      if (_isDisposed) return;
       unawaited(checkDownloadedTranslationModels());
+      unawaited(checkDownloadedHandwritingModels());
+      _scheduleSilentHandwritingPreload();
     } on MissingPluginException {
       // Ignored when path_provider is unavailable in test/headless environments
     } catch (e) {
@@ -1188,18 +1399,34 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void setPenType(PenType type) {
+    final wasTextPen = currentPenType == PenType.textPen;
     if (_activePenProfile == PenProfile.thin) {
       _thinPenType = type;
     } else {
       _thickPenType = type;
     }
     _currentTool = WhiteboardTool.pen;
+    if (wasTextPen &&
+        type != PenType.textPen &&
+        _textPenStrokes.isNotEmpty &&
+        _activeTextPenPointers.isEmpty) {
+      unawaited(convertTextPenStrokesToText());
+    }
     _notify();
   }
 
   void setShapeType(ShapeType type) {
+    _isFreeStyleShape = false;
     _currentShapeType = type;
     _notify();
+  }
+
+  /// Activates Free-Style Shape mode so rough pen strokes auto-convert into
+  /// clean geometric shapes when the pen lifts.
+  void enableFreeStyleShapeMode() {
+    _isFreeStyleShape = true;
+    _currentTool = WhiteboardTool.shape;
+    clearSelection();
   }
 
   // Selection Methods
@@ -1271,13 +1498,28 @@ class WhiteboardProvider extends ChangeNotifier {
 
     if (element is StrokeElement) {
       if (element.points.isEmpty) return false;
-      // Strict Lasso: EVERY single point of the stroke must be strictly inside the lasso path
+      if (element.points.length == 1) {
+        return lassoPath.contains(transform(element.points.first));
+      }
+      int insideCount = 0;
       for (final p in element.points) {
-        if (!lassoPath.contains(transform(p))) {
-          return false;
+        if (lassoPath.contains(transform(p))) {
+          insideCount++;
         }
       }
-      return true;
+      final int totalCount;
+      if (element.points.length == 2) {
+        final mid = Offset.lerp(element.points[0], element.points[1], 0.5)!;
+        if (lassoPath.contains(transform(mid))) {
+          insideCount++;
+        }
+        totalCount = 3;
+      } else {
+        totalCount = element.points.length;
+      }
+      // Accept strokes predominantly inside the lasso (>= 65%) so overhanging
+      // tails, Hindi matras, or shirorekha edges aren't dropped unexpectedly.
+      return insideCount / totalCount >= 0.65;
     }
 
     if (element is ShapeElement) {
@@ -1329,7 +1571,32 @@ class WhiteboardProvider extends ChangeNotifier {
         .toList();
     final command = RemoveElementsCommand(toRemove, _currentPageIndex);
     _executeCommand(command);
+    _syncTextPenBufferWithPage();
     clearSelection();
+  }
+
+  /// Atomically replaces [strokes] with a recognized [textElement] in a single
+  /// undoable command.
+  void replaceStrokesWithText(
+    List<StrokeElement> strokes,
+    TextElement textElement, {
+    bool selectResult = true,
+  }) {
+    if (_isDocumentOverlayOpen && textElement.docPage == null) {
+      textElement.docPage = _overlayCurrentPage;
+    }
+    final command = ReplaceElementsCommand(
+      List<BoardElement>.from(strokes),
+      textElement,
+      _currentPageIndex,
+    );
+    _executeCommand(command);
+    _lassoPath = null;
+    _selectedElementIds.clear();
+    if (selectResult) {
+      _selectedElementIds.add(textElement.id);
+    }
+    _notify();
   }
 
   void updateSelectedElementsColor(Color color) {
@@ -1361,6 +1628,7 @@ class WhiteboardProvider extends ChangeNotifier {
     final toRemove = List<BoardElement>.from(currentPage.elements);
     final command = ClearPageCommand(toRemove, _currentPageIndex);
     _executeCommand(command);
+    _clearTextPenPending();
     clearSelection();
   }
 
@@ -2102,6 +2370,7 @@ class WhiteboardProvider extends ChangeNotifier {
     final command = _undoStack.removeLast();
     command.undo(this);
     _redoStack.add(command);
+    _syncTextPenBufferWithPage();
     _notify();
   }
 
@@ -2130,11 +2399,13 @@ class WhiteboardProvider extends ChangeNotifier {
     _canvasPanOffset = Offset.zero;
     _undoStack.clear();
     _redoStack.clear();
+    _clearTextPenPending();
     clearSelection();
     _notify();
   }
 
   void addPage() {
+    _clearTextPenPending();
     _pages.add(BoardPage(id: const Uuid().v4(), elements: []));
     _currentPageIndex = _pages.length - 1;
     _canvasPanOffset = Offset.zero;
@@ -2145,6 +2416,7 @@ class WhiteboardProvider extends ChangeNotifier {
 
   void deletePage(int index) {
     if (_pages.length <= 1) return;
+    _clearTextPenPending();
     _pages.removeAt(index);
     if (_currentPageIndex >= _pages.length) {
       _currentPageIndex = _pages.length - 1;
@@ -2155,6 +2427,11 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   void switchPage(int index) {
+    if (_textPenStrokes.isNotEmpty && _activeTextPenPointers.isEmpty) {
+      unawaited(convertTextPenStrokesToText());
+    } else {
+      _clearTextPenPending();
+    }
     _currentPageIndex = index;
     _canvasPanOffset = Offset.zero;
     clearSelection();
@@ -2488,53 +2765,170 @@ class WhiteboardProvider extends ChangeNotifier {
   }
 
   // --- TEXT PEN (HANDWRITING-TO-TEXT) SYSTEM ---
+  @visibleForTesting
+  Duration textPenDebounceDelay = const Duration(milliseconds: 1700);
+  @visibleForTesting
+  SmartWritingService? textPenSmartWritingService;
+
   final List<StrokeElement> _textPenStrokes = [];
+  final Map<int, DateTime> _activeTextPenPointers = {};
   Timer? _textPenDebounceTimer;
   bool _isTextPenConverting = false;
+  bool _textPenRescheduleRequested = false;
 
   bool get isTextPenConverting => _isTextPenConverting;
+  int get pendingTextPenStrokeCount => _textPenStrokes.length;
 
-  void onTextPenStrokeAdded(StrokeElement stroke) {
-    if (stroke.penType != PenType.textPen) return;
-    _textPenStrokes.add(stroke);
-    _restartTextPenTimer();
+  void _pruneStaleTextPenPointers() {
+    if (_activeTextPenPointers.isEmpty) return;
+    final cutoff = DateTime.now().subtract(const Duration(seconds: 12));
+    _activeTextPenPointers.removeWhere((_, downAt) => downAt.isBefore(cutoff));
   }
 
-  void onTextPenStrokeUp() {
+  /// Synchronizes active TextPen pointers with the canvas's live pointer table
+  /// so a dropped Android UP event can never freeze conversion permanently.
+  void syncActiveTextPenPointers(Set<int> livePointerIds) {
+    if (_activeTextPenPointers.isEmpty) return;
+    _activeTextPenPointers.removeWhere((id, _) => !livePointerIds.contains(id));
+    _pruneStaleTextPenPointers();
+    if (_activeTextPenPointers.isEmpty && _textPenStrokes.isNotEmpty) {
+      _restartTextPenTimer();
+    }
+  }
+
+  /// Clears all active TextPen pointers when no contacts remain on screen.
+  void clearActiveTextPenPointers() {
+    if (_activeTextPenPointers.isEmpty) return;
+    _activeTextPenPointers.clear();
     if (_textPenStrokes.isNotEmpty) {
       _restartTextPenTimer();
     }
   }
 
+  /// Pauses TextPen conversion while a pen/finger pointer is actively drawing
+  /// so long words or continuous cursive writing never convert mid-word.
+  void onTextPenPointerDown(int pointerId) {
+    _pruneStaleTextPenPointers();
+    _activeTextPenPointers[pointerId] = DateTime.now();
+    _textPenDebounceTimer?.cancel();
+  }
+
+  /// Resumes the idle countdown only after all active TextPen pointers lift.
+  void onTextPenPointerUp(int pointerId) {
+    final removed = _activeTextPenPointers.remove(pointerId) != null;
+    _pruneStaleTextPenPointers();
+    if (removed &&
+        _activeTextPenPointers.isEmpty &&
+        _textPenStrokes.isNotEmpty) {
+      _restartTextPenTimer();
+    }
+  }
+
+  void onTextPenStrokeAdded(StrokeElement stroke) {
+    if (stroke.penType != PenType.textPen) return;
+    _pruneStaleTextPenPointers();
+    _textPenStrokes.add(stroke);
+    if (_activeTextPenPointers.isEmpty) {
+      _restartTextPenTimer();
+    } else {
+      _textPenDebounceTimer?.cancel();
+    }
+  }
+
+  void onTextPenStrokeUp() {
+    _pruneStaleTextPenPointers();
+    if (_activeTextPenPointers.isEmpty && _textPenStrokes.isNotEmpty) {
+      _restartTextPenTimer();
+    }
+  }
+
+  void _syncTextPenBufferWithPage() {
+    if (_textPenStrokes.isEmpty) return;
+    final pageIds = currentPage.elements.map((e) => e.id).toSet();
+    _textPenStrokes.removeWhere((s) => !pageIds.contains(s.id));
+    if (_textPenStrokes.isEmpty) {
+      _textPenDebounceTimer?.cancel();
+    }
+  }
+
+  void _clearTextPenPending() {
+    _textPenDebounceTimer?.cancel();
+    _textPenStrokes.clear();
+    _activeTextPenPointers.clear();
+    _textPenRescheduleRequested = false;
+  }
+
   void _restartTextPenTimer() {
     _textPenDebounceTimer?.cancel();
-    _textPenDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+    _pruneStaleTextPenPointers();
+    if (_isDisposed ||
+        _activeTextPenPointers.isNotEmpty ||
+        _textPenStrokes.isEmpty) {
+      return;
+    }
+    _textPenDebounceTimer = Timer(textPenDebounceDelay, () {
       convertTextPenStrokesToText();
     });
   }
 
   Future<void> convertTextPenStrokesToText() async {
     _textPenDebounceTimer?.cancel();
-    if (_textPenStrokes.isEmpty || _isTextPenConverting) return;
+    if (_isDisposed) return;
+    _pruneStaleTextPenPointers();
+    if (_activeTextPenPointers.isNotEmpty) {
+      if (_textPenStrokes.isNotEmpty) {
+        _textPenRescheduleRequested = true;
+      }
+      return;
+    }
+
+    _syncTextPenBufferWithPage();
+    if (_textPenStrokes.isEmpty) return;
+    if (_isTextPenConverting) {
+      _textPenRescheduleRequested = true;
+      return;
+    }
 
     _isTextPenConverting = true;
+    _textPenRescheduleRequested = false;
     notifyListeners();
 
     final strokesToConvert = List<StrokeElement>.from(_textPenStrokes);
     _textPenStrokes.clear();
 
     try {
-      await SmartWritingService().convertStrokesToFormattedText(
-        this,
-        strokesToConvert,
-        fontFamily: 'Poppins',
-      );
+      final service = textPenSmartWritingService ?? SmartWritingService();
+      await service
+          .convertStrokesToFormattedText(
+            this,
+            strokesToConvert,
+            fontFamily: 'Poppins',
+          )
+          .timeout(const Duration(seconds: 12), onTimeout: () => false);
     } catch (e) {
       debugPrint('TextPen conversion error: $e');
     } finally {
       _isTextPenConverting = false;
-      _notify();
+      _pruneStaleTextPenPointers();
+      if (!_isDisposed) {
+        if (_activeTextPenPointers.isEmpty &&
+            (_textPenStrokes.isNotEmpty || _textPenRescheduleRequested)) {
+          _textPenRescheduleRequested = false;
+          if (_textPenStrokes.isNotEmpty) {
+            _restartTextPenTimer();
+          }
+        }
+        _notify();
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _hindiPreloadTimer?.cancel();
+    _textPenDebounceTimer?.cancel();
+    super.dispose();
   }
 }
 
